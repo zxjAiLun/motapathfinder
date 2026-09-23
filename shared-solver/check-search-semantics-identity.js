@@ -1,7 +1,7 @@
 "use strict";
 
 // PR-5.31g gate: resumeSearchFingerprint must cover EVERY effective search
-// option (agenda/priority/fairness/action-cap/continuation-slice) and MUST NOT
+// option (agenda/priority/fairness/action-cap/continuation-slice local mode) and MUST NOT
 // change for diagnostic/output-only fields. Recovery must fail-closed when the
 // effective semantics differ. This is an execution-identity contract test; it
 // does not run a search.
@@ -63,7 +63,8 @@ function main() {
       assert.equal(d.problemFingerprint(mutated, towerRoot), baseProblem, `G1 FAIL: ${field} must not change problemFingerprint`);
     }
 
-    // continuationSlice.* (reserved for PR-5.32a) must also invalidate resume.
+    // continuationSlice.* including the local comparator must invalidate resume
+    // when enabled, while disabled settings remain semantically inert.
     for (const slice of [
       { enabled: true, mode: null, budget: null },
       { enabled: true, mode: "greedy-local", budget: null },
@@ -73,9 +74,21 @@ function main() {
       assert.notEqual(d.resumeSearchFingerprint(mutated, towerRoot), baseResume,
         `G1 FAIL: continuationSlice ${JSON.stringify(slice)} did not change resumeSearchFingerprint`);
     }
-    // A disabled continuation slice equals the default (no change).
-    assert.equal(d.resumeSearchFingerprint({ ...base, continuationSlice: { enabled: false } }, towerRoot), baseResume,
-      "G1 FAIL: disabled continuationSlice must equal default");
+    for (const localPriorityMode of ["inherit", "resource-first"]) {
+      const mutated = { ...base, continuationSlice: {
+        enabled: true, budget: 32, localPriorityMode,
+      } };
+      assert.notEqual(d.resumeSearchFingerprint(mutated, towerRoot), baseResume,
+        `G1 FAIL: localPriorityMode=${localPriorityMode} did not change resumeSearchFingerprint`);
+      assert.equal(d.problemFingerprint(mutated, towerRoot), baseProblem,
+        "G1 FAIL: local comparator must not change problemFingerprint");
+    }
+    // A disabled continuation slice equals the default even when an inert local
+    // comparator value is present.
+    assert.equal(d.resumeSearchFingerprint({ ...base, continuationSlice: {
+      enabled: false, localPriorityMode: "resource-first",
+    } }, towerRoot), baseResume,
+    "G1 FAIL: disabled localPriorityMode must remain semantically inert");
 
     // G2: diagnostic/output-only fields MUST NOT change the resume fingerprint.
     const diagnosticMutations = {
@@ -102,6 +115,7 @@ function main() {
     assert.equal(defaults.fairOrderMode, "fifo");
     assert.equal(defaults.maxActionsPerState, 4096);
     assert.equal(defaults.continuationSlice.enabled, false);
+    assert.equal(defaults.continuationSlice.localPriorityMode, null);
     // fairnessEvery is a raw scalar (always fingerprinted), so changing it under
     // any agenda mode invalidates resume — no cross-option suppression.
     assert.notEqual(
@@ -133,7 +147,28 @@ function main() {
       "G2 FAIL: diagnostic-only change must still resume",
     );
 
-    console.log("PASS search-semantics-identity: effective options fingerprinted (agenda/priority/fairness/action-cap/continuation-slice); diagnostic fields inert; recovery fail-closed on semantics drift; provenance recorded");
+    const inheritLocal = {
+      ...base,
+      continuationSlice: { enabled: true, budget: 32, localPriorityMode: "inherit" },
+    };
+    const resourceLocal = {
+      ...base,
+      continuationSlice: { enabled: true, budget: 32, localPriorityMode: "resource-first" },
+    };
+    const localJournal = d.newJournal(d.identityOf(inheritLocal, towerRoot), inheritLocal, state, towerRoot);
+    assert.equal(localJournal.executionProvenance.searchSemantics.continuationSlice.localPriorityMode, "inherit");
+    assert.throws(
+      () => d.recoverJournal(localJournal, d.identityOf(resourceLocal, towerRoot), { config: resourceLocal, towerRoot }),
+      /SEARCH_SEMANTICS_DRIFT/,
+      "G3 FAIL: local comparator drift must be refused on recovery",
+    );
+    assert.throws(
+      () => d.recoverJournal({ ...localJournal }, d.identityOf(resourceLocal, towerRoot), { config: resourceLocal, towerRoot }),
+      /SEARCH_SEMANTICS_DRIFT/,
+      "G3 FAIL: local comparator drift must fail closed even on copied journals",
+    );
+
+    console.log("PASS search-semantics-identity: effective options fingerprinted (agenda/priority/fairness/action-cap/local continuation comparator); diagnostic fields inert; recovery fail-closed on semantics drift; provenance recorded");
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

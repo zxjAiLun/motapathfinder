@@ -9,7 +9,7 @@ const { FunctionBackedBattleResolver } = require("./battle-resolver");
 const { GenericDoorResolver } = require("./door-resolver");
 const { createInitialState } = require("./state");
 const { buildStateKey } = require("./state-key");
-const { searchDP } = require("./dp-search");
+const { searchDP, normalizeContinuationSliceLocalPriorityMode } = require("./dp-search");
 const { buildRouteRecord } = require("./route-store");
 
 const SCHEMA = "durable-search-v1";
@@ -69,6 +69,9 @@ function searchSemantics(config) {
       enabled: slice.enabled === true,
       mode: slice.enabled === true ? (slice.mode || null) : null,
       budget: slice.enabled === true && Number.isFinite(Number(slice.budget)) ? Number(slice.budget) : null,
+      localPriorityMode: slice.enabled === true
+        ? normalizeContinuationSliceLocalPriorityMode(slice.localPriorityMode)
+        : null,
     },
   };
 }
@@ -341,7 +344,12 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     // PR-5.32a: pass the continuation slice through from the SAME canonical
     // extractor that feeds resumeSearchFingerprint — fingerprint == execution.
     continuationSlice: semantics.continuationSlice.enabled
-      ? { enabled: true, budget: semantics.continuationSlice.budget, mode: semantics.continuationSlice.mode }
+      ? {
+        enabled: true,
+        budget: semantics.continuationSlice.budget,
+        mode: semantics.continuationSlice.mode,
+        localPriorityMode: semantics.continuationSlice.localPriorityMode,
+      }
       : undefined,
     stageGoal,
     maxExpansions: budget.expansions, maxRuntimeMs: budget.runtimeMs,

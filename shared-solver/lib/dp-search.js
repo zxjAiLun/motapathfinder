@@ -479,8 +479,12 @@ function compareGoalDirectedDpAgendaRank(left, right) {
   return right.sequence - left.sequence;
 }
 
-function compareDpAgendaRank(left, right) {
-  if (left.priorityMode === "resource-first" || right.priorityMode === "resource-first") {
+function compareDpAgendaRankForMode(left, right, priorityMode) {
+  const hasExplicitMode = priorityMode !== undefined;
+  const resourceFirst = hasExplicitMode
+    ? priorityMode === "resource-first"
+    : left.priorityMode === "resource-first" || right.priorityMode === "resource-first";
+  if (resourceFirst) {
     const resourceHighWins = ["sourceActionRank", "atk", "def", "mdef", "lv", "exp", "hp", "bestFloorRank", "currentFloorRank", "finiteNextDistance"];
     for (const field of resourceHighWins) {
       const diff = Number(left[field] || 0) - Number(right[field] || 0);
@@ -500,7 +504,10 @@ function compareDpAgendaRank(left, right) {
     if (diff !== 0) return diff;
   }
   if (left.nextDistance !== right.nextDistance) return right.nextDistance - left.nextDistance;
-  const remainingHighWins = left.priorityMode === "combat-first"
+  const combatFirst = hasExplicitMode
+    ? priorityMode === "combat-first"
+    : left.priorityMode === "combat-first";
+  const remainingHighWins = combatFirst
     ? ["currentFloorRank", "sourceActionRank", "atk", "def", "mdef", "lv", "exp", "hp"]
     : ["currentFloorRank", "sourceActionRank", "hp", "atk", "def", "mdef", "lv", "exp"];
   for (const field of remainingHighWins) {
@@ -510,6 +517,16 @@ function compareDpAgendaRank(left, right) {
   if (left.decisionDepth !== right.decisionDepth) return right.decisionDepth - left.decisionDepth;
   if (left.routeLength !== right.routeLength) return right.routeLength - left.routeLength;
   return right.sequence - left.sequence;
+}
+
+function compareDpAgendaRank(left, right) {
+  return compareDpAgendaRankForMode(left, right);
+}
+
+function normalizeContinuationSliceLocalPriorityMode(value) {
+  if (value == null || value === "" || value === "inherit") return "inherit";
+  if (value === "resource-first") return value;
+  throw new Error(`unsupported continuationSlice.localPriorityMode: ${String(value)}`);
 }
 
 function emptyActionStats() {
@@ -1185,8 +1202,9 @@ function searchDPCore(simulator, initialRoots, options) {
   // default OFF (bit-for-bit behavior-preserving).  When enabled AND fairness is
   // on, a fair-served node N opens a local slice: the whole local subtree shares
   // ONE total budget K, drawn from the SAME global maxExpansions (never extra),
-  // expanding by the SAME single-root comparator; when K expansions are used (or
-  // the local frontier drains) survivors return to the global agenda normally.
+  // expanding with the configured local comparator (default inherit); when K is
+  // used (or the local frontier drains) survivors return to the global agenda
+  // normally.  The local comparator is a read-only view over shared rank data.
   // No per-child budget, no inherited permanent priority, no new heuristic.
   const continuationSliceConfig = config.continuationSlice && typeof config.continuationSlice === "object"
     ? config.continuationSlice
@@ -1195,6 +1213,9 @@ function searchDPCore(simulator, initialRoots, options) {
   const continuationSliceBudget = continuationSliceEnabled
     ? Math.max(1, Math.floor(number(continuationSliceConfig.budget, 32)))
     : 0;
+  const continuationSliceLocalPriorityMode = continuationSliceEnabled
+    ? normalizeContinuationSliceLocalPriorityMode(continuationSliceConfig.localPriorityMode)
+    : "inherit";
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
   const maxExpansionsAfterFirstGoal = config.maxExpansionsAfterFirstGoal == null
     ? null
@@ -1221,6 +1242,7 @@ function searchDPCore(simulator, initialRoots, options) {
     // PR-5.32a bounded continuation slice diagnostics (all 0 when disabled).
     continuationSliceEnabled,
     continuationSliceBudget,
+    continuationSliceLocalPriorityMode: continuationSliceEnabled ? continuationSliceLocalPriorityMode : null,
     continuationSlicesOpened: 0,
     continuationSliceLocalExpansions: 0,
     continuationSliceSurvivorsReturned: 0,
@@ -1258,6 +1280,9 @@ function searchDPCore(simulator, initialRoots, options) {
       ? compareGoalDirectedDpAgendaRank(left.rank, right.rank)
       : compareDpAgendaRank(left.rank, right.rank)
   );
+  const compareContinuationSliceRank = continuationSliceLocalPriorityMode === "inherit"
+    ? compareSingleRootRank
+    : (left, right) => compareDpAgendaRankForMode(left.rank, right.rank, continuationSliceLocalPriorityMode);
   const compareMultiRootAgendaEntry = (left, right) => {
     const rootDiff = (right.rootIndex != null ? right.rootIndex : 0) - (left.rootIndex != null ? left.rootIndex : 0);
     if (rootDiff !== 0) return rootDiff;
@@ -1265,9 +1290,10 @@ function searchDPCore(simulator, initialRoots, options) {
   };
   const rootAgendas = new Map(); // rootIndex -> BinaryHeap(single-root comparator)
   const rootSliced = multiRootSchedulingPolicy === "root-sliced";
-  // PR-5.32a: local continuation-slice frontier, ordered by the SAME single-root
-  // comparator as global expansion order (no new heuristic).  null until a slice
-  // opens; declared here so compareSingleRootRank is already initialized (no TDZ).
+  // PR-5.32a/c: local continuation-slice frontier is a view over the same
+  // immutable rank snapshots.  Its explicit comparator mode never mutates the
+  // rank or the goal-relative global agenda; local survivors keep their global
+  // queue entries and resume global ordering when the bounded slice closes.
   let continuationSliceHeap = null;
   let continuationSliceRemaining = 0;
   let continuationSliceActive = false;
@@ -2423,7 +2449,7 @@ function searchDPCore(simulator, initialRoots, options) {
     if (!continuationSliceEnabled) return;
     // The whole local subtree shares ONE total budget K; the fair-served root's
     // own expansion consumes the first unit (decremented in the main loop).
-    continuationSliceHeap = new BinaryHeap(compareSingleRootRank);
+    continuationSliceHeap = new BinaryHeap(compareContinuationSliceRank);
     continuationSliceRemaining = continuationSliceBudget;
     continuationSliceActive = true;
     agendaFairness.continuationSlicesOpened += 1;
@@ -3575,4 +3601,7 @@ module.exports = {
   routeLengthOfState,
   searchDP,
   searchDPMultiRoot,
+  compareDpAgendaRank,
+  compareDpAgendaRankForMode,
+  normalizeContinuationSliceLocalPriorityMode,
 };

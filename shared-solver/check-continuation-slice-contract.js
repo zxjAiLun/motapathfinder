@@ -13,12 +13,18 @@
 //   G4  huge-K dominance: after the FIRST fair pop the slice never closes, so
 //       exactly ONE fair pop happens and every later pop is continuation-slice.
 //   G5  determinism: identical config twice => identical pop streams/results.
-//   G6  fingerprint: searchSemantics normalizes continuationSlice, default off,
-//       and enabling it changes the semantics projection (sensitivity of the
-//       resume fingerprint itself is graded in check-search-semantics-identity).
+//   G6  fingerprint: searchSemantics includes the local comparator mode (inherit
+//       by default); resume identity sensitivity is also covered independently.
+//   G7  local comparator: resource-first may reorder the shared rank view, but
+//       must never mutate rank.priorityMode or change the global comparator.
 
 const assert = require("node:assert/strict");
-const { searchDP } = require("./lib/dp-search");
+const {
+  searchDP,
+  compareDpAgendaRank,
+  compareDpAgendaRankForMode,
+  normalizeContinuationSliceLocalPriorityMode,
+} = require("./lib/dp-search");
 const { searchSemantics } = require("./lib/durable-search");
 
 const DEPTH = 16;
@@ -91,6 +97,7 @@ function makeInitialState() {
 
 function runSearch(sliceConfig) {
   const pops = [];
+  const popRankModes = [];
   const result = searchDP(makeBranchingSimulator(DEPTH, BREADTH), makeInitialState(), {
     goalPredicate: () => false,
     stopOnFirstGoal: false,
@@ -107,10 +114,13 @@ function runSearch(sliceConfig) {
     ...(sliceConfig ? { continuationSlice: sliceConfig } : {}),
     observer: {
       eventTypes: ["agendaPopped"],
-      onEvent: (event) => pops.push(event.popSource),
+      onEvent: (event) => {
+        pops.push(event.popSource);
+        if (event.eventType === "agendaPopped") popRankModes.push(event.agendaRank && event.agendaRank.priorityMode);
+      },
     },
   });
-  return { result, pops };
+  return { result, pops, popRankModes };
 }
 
 // Curated projection of a run: only deterministic search-content fields, never
@@ -133,6 +143,7 @@ function projectRun(run) {
     bestSeenHero: run.result.bestSeenState ? run.result.bestSeenState.hero : null,
     deepestDepth: run.result.deepestExpandedState ? run.result.deepestExpandedState.step : null,
     pops: run.pops,
+    popRankModes: run.popRankModes,
   };
 }
 
@@ -152,7 +163,32 @@ function sliceDiag(run) {
   };
 }
 
+function assertLocalComparatorIsReadOnly() {
+  const goalRank = Object.freeze({
+    priorityMode: "goal-relative", bestFloorRank: 10, finiteNextDistance: 1, nextDistance: 1,
+    currentFloorRank: 10, sourceActionRank: 0, hp: 100, atk: 1, def: 0, mdef: 0,
+    lv: 1, exp: 0, decisionDepth: 4, routeLength: 8, sequence: 1,
+  });
+  const resourceRank = Object.freeze({
+    priorityMode: "goal-relative", bestFloorRank: 9, finiteNextDistance: 1, nextDistance: 20,
+    currentFloorRank: 9, sourceActionRank: 2, hp: 900, atk: 9, def: 1, mdef: 0,
+    lv: 2, exp: 4, decisionDepth: 6, routeLength: 10, sequence: 2,
+  });
+  const beforeLeft = JSON.stringify(goalRank);
+  const beforeRight = JSON.stringify(resourceRank);
+  const globalBefore = compareDpAgendaRank(goalRank, resourceRank);
+  const localResourceFirst = compareDpAgendaRankForMode(goalRank, resourceRank, "resource-first");
+  const globalAfter = compareDpAgendaRank(goalRank, resourceRank);
+  assert.ok(globalBefore > 0 && localResourceFirst < 0,
+    "G7 FAIL: explicit local resource-first view must reorder the same shared rank pair");
+  assert.equal(globalAfter, globalBefore,
+    "G7 FAIL: invoking local comparator must not change the global comparator result");
+  assert.equal(JSON.stringify(goalRank), beforeLeft, "G7 FAIL: local comparator mutated the shared left rank");
+  assert.equal(JSON.stringify(resourceRank), beforeRight, "G7 FAIL: local comparator mutated the shared right rank");
+}
+
 function main() {
+  assertLocalComparatorIsReadOnly();
   const off = runSearch(null);
 
   // G3 (matched total work): baseline fills the budget exactly and stops on the
@@ -179,6 +215,12 @@ function main() {
   assert.equal(k1d.opened, fairnessDiag(off).fairPops, "G1 FAIL: every fair pop must open exactly one slice");
   assert.equal(k1d.localExpansions, k1d.opened, "G1 FAIL: K=1 must consume exactly one expansion per slice (the root)");
   assert.equal(k1d.survivorsReturned, 0, "G1 FAIL: K=1 closes before any child enqueues locally");
+
+  const k1Resource = runSearch({ enabled: true, budget: 1, localPriorityMode: "resource-first" });
+  assert.deepEqual(projectRun(k1Resource), projectRun(off),
+    "G1 FAIL: K=1 local resource-first must preserve global pop stream and result");
+  assert.ok(k1Resource.popRankModes.every((mode) => mode === "default"),
+    "G7 FAIL: local mode must not overwrite priorityMode on globally shared ranks");
 
   // G2: subtree shares ONE budget K.  Slice pops may only appear in a run
   // immediately following a fair-oldest pop, and each run is strictly shorter
@@ -215,6 +257,22 @@ function main() {
   assert.ok(sd.localExpansions <= sd.opened * K, "G2 FAIL: slice work exceeds slicesOpened * K");
   assert.ok(sd.survivorsReturned >= 0, "G2 FAIL: survivors counter must be well-formed");
 
+  const resourceSliced = runSearch({ enabled: true, budget: K, localPriorityMode: "resource-first" });
+  assert.equal(resourceSliced.result.expansions, BUDGET,
+    "G7 FAIL: local resource-first must draw from the same global expansion budget");
+  assert.ok(resourceSliced.pops.includes("continuation-slice"),
+    "G7 FAIL: local resource-first arm must exercise local heap service");
+  assert.ok(resourceSliced.popRankModes.every((mode) => mode === "default"),
+    "G7 FAIL: local resource-first must leave shared rank.priorityMode unchanged");
+  const resourceDiag = fairnessDiag(resourceSliced);
+  assert.equal(resourceDiag.continuationSliceLocalPriorityMode, "resource-first",
+    "G7 FAIL: diagnostics must identify the effective local comparator");
+  assert.equal(resourceDiag.continuationSlicesOpened, resourceDiag.fairPops,
+    "G7 FAIL: local comparator must preserve fair-pop-only triggering");
+  const resourceRepeat = runSearch({ enabled: true, budget: K, localPriorityMode: "resource-first" });
+  assert.deepEqual(projectRun(resourceRepeat), projectRun(resourceSliced),
+    "G7 FAIL: local resource-first stream must be deterministic");
+
   // G4: huge-K dominance.  With K far beyond the budget, the FIRST fair pop's
   // slice never closes: exactly one fair pop total and every subsequent pop is
   // a continuation-slice pop (fair cadence is paused by an open slice).
@@ -241,17 +299,28 @@ function main() {
   // land in the semantics projection (resume-fingerprint sensitivity itself is
   // covered by check-search-semantics-identity).
   const semOff = searchSemantics({});
-  assert.deepEqual(semOff.continuationSlice, { enabled: false, mode: null, budget: null },
-    "G6 FAIL: default continuationSlice must be disabled");
+  assert.deepEqual(semOff.continuationSlice, {
+    enabled: false, mode: null, budget: null, localPriorityMode: null,
+  }, "G6 FAIL: default continuationSlice must be disabled with no local comparator");
   const semOn = searchSemantics({ continuationSlice: { enabled: true, budget: K } });
-  assert.deepEqual(semOn.continuationSlice, { enabled: true, mode: null, budget: K },
-    "G6 FAIL: enabled slice must be normalized into searchSemantics");
-  assert.notDeepEqual(semOn, semOff, "G6 FAIL: enabling the slice must change searchSemantics");
+  assert.deepEqual(semOn.continuationSlice, {
+    enabled: true, mode: null, budget: K, localPriorityMode: "inherit",
+  }, "G6 FAIL: enabled slice must default localPriorityMode to inherit");
+  const semResourceFirst = searchSemantics({ continuationSlice: {
+    enabled: true, budget: K, localPriorityMode: "resource-first",
+  } });
+  assert.equal(semResourceFirst.continuationSlice.localPriorityMode, "resource-first");
+  assert.notDeepEqual(semResourceFirst, semOn,
+    "G6 FAIL: local resource-first must be represented in effective semantics");
+  assert.deepEqual(searchSemantics({ continuationSlice: {
+    enabled: false, budget: 999, localPriorityMode: "resource-first",
+  } }), semOff, "G6 FAIL: disabled slice settings must remain semantically inert");
+  assert.throws(() => normalizeContinuationSliceLocalPriorityMode("combat-first"),
+    /unsupported continuationSlice/,
+    "G7 FAIL: unsupported local comparator must fail closed");
 
   console.log(
-    "PASS continuation-slice-contract: K=1 identity / shared subtree budget K / no inherited priority / " +
-    `same global budget (all arms ${BUDGET}=expansion-limit) / huge-K pauses cadence post-first-fair-pop / ` +
-    "deterministic / semantics normalized",
+    "PASS continuation-slice-contract: K=1 identity / shared K budget / fair-only trigger / deterministic local resource-first / immutable shared ranks / global comparator preserved / semantics fingerprint normalization",
   );
 }
 

@@ -3234,7 +3234,7 @@
       "allowsNotFound": false,
       "requiresStrictReplay": false,
       "cleanCheckout": true,
-      "notes": "PR-5.32a bounded continuation slice: K=1 identity (== OFF), subtree shares ONE budget K, slice pops anchored to fair pops only (no inherited priority), same global expansion budget, huge-K pauses fair cadence, determinism; pure synthetic simulator, no tower dependency"
+      "notes": "PR-5.32a/c bounded continuation slice: K=1 identity, shared K budget, fair-pop-only trigger, deterministic local resource-first view, immutable shared rank snapshots/global comparator invariance, default inherit behavior, and local mode in search-semantics fingerprint; pure synthetic simulator, no tower dependency"
     },
     "shared-solver/check-core-regressions.js": {
       "grade": "unit-plus-micro",
