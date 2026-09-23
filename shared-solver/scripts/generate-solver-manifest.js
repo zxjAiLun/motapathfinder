@@ -602,6 +602,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": false,
     "notes": "auto-graded inventory entry; refine when the check becomes a tracked clean-checkout or closure test"
   },
+  "shared-solver/check-continuation-confluence-contract.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.32f exact-confluence slice handoff: default OFF identity, real rejected successor borrows a live unexpanded exact representative, immutable rank/parent, shared K, dedup/cycle/eviction guards, observer independence; pure synthetic graph"
+  },
   "shared-solver/check-continuation-slice-contract.js": {
     "grade": "unit-plus-micro",
     "allowsNotFound": false,
@@ -1935,6 +1942,7 @@ const manifest = {
       requiredChecks: [
         "shared-solver/check-core-regressions.js",
         "shared-solver/check-continuation-slice-contract.js",
+        "shared-solver/check-continuation-confluence-contract.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",

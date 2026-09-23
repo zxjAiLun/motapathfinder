@@ -168,7 +168,31 @@ function main() {
       "G3 FAIL: local comparator drift must fail closed even on copied journals",
     );
 
-    console.log("PASS search-semantics-identity: effective options fingerprinted (agenda/priority/fairness/action-cap/local continuation comparator); diagnostic fields inert; recovery fail-closed on semantics drift; provenance recorded");
+    const confluenceOn = {
+      ...inheritLocal,
+      continuationSlice: { ...inheritLocal.continuationSlice, exactConfluenceHandoff: true },
+    };
+    const confluenceOff = {
+      ...inheritLocal,
+      continuationSlice: { ...inheritLocal.continuationSlice, exactConfluenceHandoff: false },
+    };
+    assert.deepEqual(d.searchSemantics(confluenceOff), d.searchSemantics(inheritLocal),
+      "G5 FAIL: explicit handoff OFF must retain legacy semantics serialization");
+    assert.notEqual(d.resumeSearchFingerprint(confluenceOn, towerRoot), d.resumeSearchFingerprint(inheritLocal, towerRoot),
+      "G5 FAIL: handoff ON must change resume fingerprint");
+    assert.equal(d.problemFingerprint(confluenceOn, towerRoot), baseProblem);
+    assert.equal(d.searchSemantics(confluenceOn).continuationSlice.exactConfluenceHandoff, true);
+    assert.deepEqual(d.searchSemantics({ ...base, continuationSlice: { enabled: false, exactConfluenceHandoff: true } }),
+      d.searchSemantics(base), "G5 FAIL: disabled slice must ignore handoff");
+    assert.throws(() => d.searchSemantics({ continuationSlice: { enabled: true, exactConfluenceHandoff: "true" } }),
+      /unsupported continuationSlice.exactConfluenceHandoff/);
+    assert.throws(
+      () => d.recoverJournal({ ...localJournal }, d.identityOf(confluenceOn, towerRoot), { config: confluenceOn, towerRoot }),
+      /SEARCH_SEMANTICS_DRIFT/,
+      "G5 FAIL: exact-confluence handoff drift must fail closed on recovery",
+    );
+
+    console.log("PASS search-semantics-identity: effective options fingerprinted (agenda/priority/fairness/action-cap/local comparator/exact-confluence handoff); diagnostic fields inert; recovery fail-closed; OFF serialization preserved");
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

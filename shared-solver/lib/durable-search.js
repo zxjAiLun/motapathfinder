@@ -9,7 +9,11 @@ const { FunctionBackedBattleResolver } = require("./battle-resolver");
 const { GenericDoorResolver } = require("./door-resolver");
 const { createInitialState } = require("./state");
 const { buildStateKey } = require("./state-key");
-const { searchDP, normalizeContinuationSliceLocalPriorityMode } = require("./dp-search");
+const {
+  searchDP,
+  normalizeContinuationSliceLocalPriorityMode,
+  normalizeContinuationSliceExactConfluenceHandoff,
+} = require("./dp-search");
 const { buildRouteRecord } = require("./route-store");
 
 const SCHEMA = "durable-search-v1";
@@ -72,6 +76,10 @@ function searchSemantics(config) {
       localPriorityMode: slice.enabled === true
         ? normalizeContinuationSliceLocalPriorityMode(slice.localPriorityMode)
         : null,
+      // Preserve the legacy OFF serialization; only opt-in adds semantics.
+      ...(slice.enabled === true && normalizeContinuationSliceExactConfluenceHandoff(slice.exactConfluenceHandoff)
+        ? { exactConfluenceHandoff: true }
+        : {}),
     },
   };
 }
@@ -344,12 +352,7 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     // PR-5.32a: pass the continuation slice through from the SAME canonical
     // extractor that feeds resumeSearchFingerprint — fingerprint == execution.
     continuationSlice: semantics.continuationSlice.enabled
-      ? {
-        enabled: true,
-        budget: semantics.continuationSlice.budget,
-        mode: semantics.continuationSlice.mode,
-        localPriorityMode: semantics.continuationSlice.localPriorityMode,
-      }
+      ? { ...semantics.continuationSlice }
       : undefined,
     stageGoal,
     maxExpansions: budget.expansions, maxRuntimeMs: budget.runtimeMs,

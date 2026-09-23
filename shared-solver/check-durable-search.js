@@ -137,6 +137,20 @@ async function main() {
     const overlayNoFlags = buildBattleOverlay(dummyProject, dummySim, { ...preview.renderState, flags: undefined });
     assert.ok(overlayNoFlags, "buildBattleOverlay must safely handle state without flags");
 
+    // PR-5.32f: exercise the REAL durable forwarding path, not just identity
+    // normalization. Keep this attempt isolated from the earlier ledger.
+    const handoffConfig = { ...config, dpAgendaMode: "hybrid-fair", fairnessEvery: 4,
+      continuationSlice: { enabled: true, budget: 4, exactConfluenceHandoff: true } };
+    const handoffDir = path.join(temp, "handoff-forwarding");
+    const handoffState = d.initialState(dummyProject, d.makeSimulator(dummyProject, handoffConfig), handoffConfig);
+    const handoffTask = { id: "forwarding", stage: 0, tier: 0 };
+    d.atomicJson(path.join(handoffDir, "initial.json"), handoffState);
+    d.atomicJson(path.join(handoffDir, "states/forwarding.json"), handoffState);
+    const handoffAttempt = d.runAttempt(handoffConfig, path.dirname(project), handoffDir, handoffTask);
+    assert.equal(handoffAttempt.stats.diagnostics.dp.agendaFairness.continuationSliceExactConfluenceHandoff, true,
+      "runAttempt must forward the fingerprinted exact-confluence option to searchDP");
+    assert.equal(handoffAttempt.verified.strictReplay, true);
+
     // 2. Integration and persistence: preview.json and previews/<id>.preview.json are written
     const mockJournal = d.newJournal("ident", config, mockState);
     const mockTask = d.pickTask(mockJournal);

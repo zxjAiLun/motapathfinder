@@ -529,6 +529,12 @@ function normalizeContinuationSliceLocalPriorityMode(value) {
   throw new Error(`unsupported continuationSlice.localPriorityMode: ${String(value)}`);
 }
 
+function normalizeContinuationSliceExactConfluenceHandoff(value) {
+  if (value == null || value === false) return false;
+  if (value === true) return true;
+  throw new Error(`unsupported continuationSlice.exactConfluenceHandoff: ${String(value)}`);
+}
+
 function emptyActionStats() {
   return {
     byActionType: {},
@@ -1216,6 +1222,8 @@ function searchDPCore(simulator, initialRoots, options) {
   const continuationSliceLocalPriorityMode = continuationSliceEnabled
     ? normalizeContinuationSliceLocalPriorityMode(continuationSliceConfig.localPriorityMode)
     : "inherit";
+  const continuationSliceExactConfluenceHandoff = continuationSliceEnabled
+    && normalizeContinuationSliceExactConfluenceHandoff(continuationSliceConfig.exactConfluenceHandoff);
   const stopOnFirstGoal = config.stopOnFirstGoal !== false;
   const maxExpansionsAfterFirstGoal = config.maxExpansionsAfterFirstGoal == null
     ? null
@@ -1247,6 +1255,13 @@ function searchDPCore(simulator, initialRoots, options) {
     continuationSliceLocalExpansions: 0,
     continuationSliceSurvivorsReturned: 0,
     continuationSliceMaxDepthReached: 0,
+    ...(continuationSliceExactConfluenceHandoff ? {
+      continuationSliceExactConfluenceHandoff: true,
+      continuationConfluenceAttempts: 0,
+      continuationConfluenceHandoffs: 0,
+      continuationConfluenceAlreadyInView: 0,
+      continuationConfluencePops: 0,
+    } : {}),
   };
   // PR-5.24h Iteration 2 — multi-root shared DP authority: ONE live agenda.
   // PR-5.24h Iteration 3 — root-sliced scheduling (bounded root fairness).
@@ -1266,6 +1281,9 @@ function searchDPCore(simulator, initialRoots, options) {
   //   Single-root searches (multiRootSearch === false) keep the exact
   //   historical single-heap path (G30-A parity).
   const multiRootSearch = (initialRoots || []).length > 1;
+  if (multiRootSearch && continuationSliceExactConfluenceHandoff) {
+    throw new Error("continuationSlice.exactConfluenceHandoff requires single-root search");
+  }
   // Root-sliced scheduling applies to the best-first multi-root path (the
   // activation guard requires best-first; hybrid-fair/fifo multi-root keeps
   // the legacy ordering — heap is null for fifo, checked below after decl).
@@ -1297,6 +1315,8 @@ function searchDPCore(simulator, initialRoots, options) {
   let continuationSliceHeap = null;
   let continuationSliceRemaining = 0;
   let continuationSliceActive = false;
+  let continuationSliceNodeIds = null;
+  let continuationSliceBorrowedNodeIds = null;
   if (multiRootSearch && rootSliced) {
     // Per-root scheduling queues; the global `heap` stays as the agenda only
     // for the legacy root-ordered policy (and the single-root path).
@@ -1706,6 +1726,47 @@ function searchDPCore(simulator, initialRoots, options) {
     return continueAfterGoal || !isGoalState(entry.state);
   };
 
+  const pushContinuationSliceNode = (node) => {
+    if (continuationSliceNodeIds) {
+      if (continuationSliceNodeIds.has(node.nodeId)) return false;
+      continuationSliceNodeIds.add(node.nodeId);
+    }
+    continuationSliceHeap.push(node);
+    return true;
+  };
+
+  // PR-5.32f: a rejected successor may reach an already-owned, unexpanded
+  // representative. Borrow ONE exact-state representative into the local view;
+  // never register/reparent it, change its rank, or grant more slice budget.
+  const handoffExactConfluence = (state, sourceAction, parentNode, representatives) => {
+    if (!continuationSliceExactConfluenceHandoff || !continuationSliceActive
+      || !parentNode || !sourceAction) return;
+    agendaFairness.continuationConfluenceAttempts += 1;
+    let exactKey = null;
+    for (const node of representatives) {
+      if (!isActiveEntry(node) || expandedNodeIds.has(node.nodeId)
+        || heroHp(state) !== heroHp(node.state)) continue;
+      if (exactKey === null) exactKey = buildStateKey(state);
+      if (buildStateKey(node.state) !== exactKey) continue;
+      if (!pushContinuationSliceNode(node)) {
+        agendaFairness.continuationConfluenceAlreadyInView += 1;
+        return;
+      }
+      continuationSliceBorrowedNodeIds.add(node.nodeId);
+      agendaFairness.continuationConfluenceHandoffs += 1;
+      emitStateEvent("continuationHandoff", node.state, node, () => ({
+        reasonCode: "exact-confluence-handoff",
+        nodeId: node.nodeId,
+        parentId: node.parentId,
+        continuationParentNodeId: parentNode.nodeId,
+        action: compactObserverAction(simulator, sourceAction),
+        expansions,
+        continuationSliceRemaining,
+      }));
+      return;
+    }
+  };
+
   const archiveLandmark = (node, sourceAction, parentNode) => {
     if (landmarkArchiveLimit <= 0 || !node || !sourceAction) return;
     const kind = sourceAction.kind || "unknown";
@@ -1966,6 +2027,8 @@ function searchDPCore(simulator, initialRoots, options) {
           });
         }
       }
+      handoffExactConfluence(state, sourceAction, parentNode,
+        existingSkyline || (existing ? [existing] : []));
       return false;
     }
     const existing = bestByKey instanceof SkylineSet ? bestByKey.get(key) : bestByKey.get(key);
@@ -2191,12 +2254,11 @@ function searchDPCore(simulator, initialRoots, options) {
       fairEntries.push(node);
       fairEnqueueExpansions.set(node.nodeId, expansions);
     }
-    // PR-5.32a: while a continuation slice is open, every newly registered
-    // child is ALSO pushed into the slice's local frontier (view-only — the
-    // node stays owned by the global agenda).  All expansions while a slice
-    // is open are slice-subtree expansions, so no ancestry check is needed.
+    // Every new child is also viewed locally. With exact-confluence handoff,
+    // borrowed nodes may have an older parent chain; global ownership and
+    // immutable node/rank/provenance remain unchanged in both cases.
     if (continuationSliceActive) {
-      continuationSliceHeap.push(node);
+      pushContinuationSliceNode(node);
     }
     if (profileExpansion) {
       perfTracker.endTopLevelPhase("frontierQueue");
@@ -2426,6 +2488,9 @@ function searchDPCore(simulator, initialRoots, options) {
     while (continuationSliceHeap && continuationSliceHeap.length > 0) {
       const entry = continuationSliceHeap.pop();
       if (!continuationSliceNodeIsLive(entry)) continue;
+      if (continuationSliceBorrowedNodeIds && continuationSliceBorrowedNodeIds.has(entry.nodeId)) {
+        agendaFairness.continuationConfluencePops += 1;
+      }
       agendaFairness.continuationSliceMaxDepthReached = Math.max(
         agendaFairness.continuationSliceMaxDepthReached,
         Number(entry.depth || 0),
@@ -2442,6 +2507,8 @@ function searchDPCore(simulator, initialRoots, options) {
     }
     agendaFairness.continuationSliceSurvivorsReturned += survivors;
     continuationSliceHeap = null;
+    continuationSliceNodeIds = null;
+    continuationSliceBorrowedNodeIds = null;
     continuationSliceRemaining = 0;
     continuationSliceActive = false;
   };
@@ -2450,6 +2517,8 @@ function searchDPCore(simulator, initialRoots, options) {
     // The whole local subtree shares ONE total budget K; the fair-served root's
     // own expansion consumes the first unit (decremented in the main loop).
     continuationSliceHeap = new BinaryHeap(compareContinuationSliceRank);
+    continuationSliceNodeIds = continuationSliceExactConfluenceHandoff ? new Set() : null;
+    continuationSliceBorrowedNodeIds = continuationSliceExactConfluenceHandoff ? new Set() : null;
     continuationSliceRemaining = continuationSliceBudget;
     continuationSliceActive = true;
     agendaFairness.continuationSlicesOpened += 1;
@@ -3604,4 +3673,5 @@ module.exports = {
   compareDpAgendaRank,
   compareDpAgendaRankForMode,
   normalizeContinuationSliceLocalPriorityMode,
+  normalizeContinuationSliceExactConfluenceHandoff,
 };
