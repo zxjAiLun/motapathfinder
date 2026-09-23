@@ -1,0 +1,138 @@
+{
+  "schema": "motapathfinder.pr532e.result.v1",
+  "verification": "VERIFIED",
+  "review": "NOT_PERFORMED",
+  "acceptance": "PENDING_OWNER",
+  "disposition": "PRESERVED_CAPABILITY_UNSERVED_AT_EXACT_CONFLUENCE",
+  "source": {
+    "repositoryBase": "b1d11c56efb817bdbd82d9c6d213704926e57f71",
+    "solverCommit": "7de00f27d13312cf26f45db92512a4bf68250a48",
+    "controlEventsSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "controlEventCount": 181653,
+    "bundleFileCount": 1262,
+    "bundleDriftCount": 0,
+    "newTowerSearches": 0,
+    "solverSourceChanges": 0
+  },
+  "p16": {
+    "action": "battle:skeleton@TS13:1,9",
+    "nodeId": 26836,
+    "parentId": 26784,
+    "exactKeySha256": "3fdb6e210a172d4ea0d373782c53acb6bd11b9e8cbcce33f6c85dbec870ada38",
+    "dpKeySha256": "fd7303fce27d0114a72c05a7f1a9f6272c1900a01e632e327e6730aaa3079317",
+    "hp": 5245,
+    "decisionDepth": 47,
+    "rawRouteLength": 110,
+    "insertedAtExpansion": 10547,
+    "popped": false,
+    "evicted": false,
+    "activeUnexpandedAtEnd": true,
+    "unservedExpansionsAfterInsertion": 21453,
+    "nextDistance": 13,
+    "fairQueueOrdinal": 26836,
+    "laterArrival": {
+      "parentId": 46698,
+      "parentPopExpansion": 17978,
+      "parentOfParent": 1339,
+      "candidateDisposition": "dominance-rejected",
+      "sameExactStateKeyAsNode26836": true,
+      "sameDpKey": true,
+      "sameHpDepthAndRawRouteLength": true,
+      "rejectionIncumbentIdentityCaptured": false
+    }
+  },
+  "serviceMechanism": {
+    "firstWindow": {
+      "rootNode": 764,
+      "rootPopExpansion": 10527,
+      "expansions": 32,
+      "p15PopExpansion": 10546,
+      "remainingPops": 12,
+      "allRemainingSelectedNodesOutrankP16": true,
+      "selectedNextDistances": [7, 9, 7, 7, 7, 7, 9, 9, 9, 9, 11, 7]
+    },
+    "secondWindow": {
+      "rootNode": 1339,
+      "rootPopExpansion": 17967,
+      "expansions": 32,
+      "p15PopExpansion": 17978,
+      "remainingPops": 20,
+      "existingP16AddedToLocalView": false,
+      "nextActuallyPoppedNode": 46707,
+      "nextActuallyPoppedExpansion": 17979,
+      "nextActuallyPoppedDistance": 15,
+      "compareSelectedMinusP16": -2,
+      "positiveComparatorMeans": "left ranks first",
+      "p16WouldOutrankNextSelectedIfPresentInLocalView": true,
+      "fullCounterfactualSearchPerformed": false
+    },
+    "globalAfterP16Insertion": {
+      "bestFirstPops": 1525,
+      "allOutrankP16": true,
+      "firstDecidingFieldCounts": { "nextDistance": 1525 },
+      "finalFairCursor": 2694,
+      "finalFairQueueLength": 83148
+    },
+    "eventDerivedFinalFrontier": 44885,
+    "frontierMatchesSolverReport": true,
+    "codePaths": [
+      "shared-solver/lib/dp-search.js: dominated enqueue returns false before local frontier insertion",
+      "shared-solver/lib/dp-search.js: only newly registered nodes are pushed to continuationSliceHeap",
+      "shared-solver/lib/dp-search.js: goal-relative comparator compares nextDistance before resources",
+      "shared-solver/lib/dp-search.js: fairCursor advances on global fair pops, not on each slice expansion"
+    ]
+  },
+  "capabilityProof": {
+    "uniquelyReconstructedSearchEdges": 37,
+    "everyReconstructedEdgeMatchesExactKeyAndLiveDepthRawCounters": true,
+    "p16ReplayUsesActualParentChain": true,
+    "remainingAuthoredSuffixSteps": 14,
+    "everySuffixExactKeyMatchesPriorAuditedIncumbentSuffix": true,
+    "finalFloor": "TS14",
+    "finalHp": 5703,
+    "finalAtk": 12,
+    "protectedGreenKeyAtP16": 34,
+    "minimumProtectedGreenKeyThroughoutSuffix": 34,
+    "finalProtectedGreenKey": 34,
+    "autonomousFiveFloorRouteFound": false
+  },
+  "p14CounterFollowup": {
+    "actualParentNode": 81710,
+    "searchSeedDepth": 29,
+    "actualParentChainActions": 15,
+    "witnessPrefixActions": 13,
+    "extraActions": ["changeFloor@TS13:1,1", "changeFloor@TS12:1,1"],
+    "explanation": "Actual P13 lineage first makes an extra down/up floor round trip; not a seed baseline normalization error.",
+    "reconstructedP13DepthRaw": [44, 100],
+    "reconstructedP14DepthRaw": [45, 104]
+  },
+  "validation": {
+    "analysisScriptSyntax": "PASS",
+    "evidenceAssertions": "PASS",
+    "rejectedNegativeControls": 6,
+    "existingContinuationSliceContract": "PASS",
+    "staticSuite": "Not rerun; pre-existing region-entry generated fixture hash failures remain unresolved"
+  },
+  "production": {
+    "state": "paused",
+    "current": null,
+    "nodes": 43,
+    "searchService": "inactive",
+    "journalStatusAndStopHashesUnchanged": true
+  },
+  "limitations": [
+    "State recovery is an offline replay bound to actual parent edges and keys/counters, not a saved private heap dump.",
+    "The P16 rejection payload did not identify its exact incumbent; retained node26836 suffices to demonstrate preserved capability, not unique rejection-witness identity.",
+    "Only local-view membership/rank at the next pop was evaluated counterfactually. No claim that borrowing P16 alone reaches TS14 or TS15 within 32k.",
+    "TS14 is the fourth floor, not five-floor/Boss completion. The known suffix is an offline diagnostic witness, never an autonomous search result."
+  ],
+  "nextGate": "Freeze and test exact-confluence continuation-slice handoff: existing live unexpanded exact-state representative may enter current bounded local view; no key/dominance/rank/K changes, no reparenting or repeat expansion. Then separate fixed-32k same-code A/B with witness excluded from search.",
+  "artifacts": {
+    "cloudRoot": "/home/ubuntu/motapath-solver/probes/pr532e-suffix-service-r1/analysis/",
+    "localRoot": "shared-solver/routes/generated/260923-pr532e/",
+    "lifecycleSha256": "ae190f343c3ebb97e730cec545354ae6be09e3dc5638f9b849410fdbf5f8f870",
+    "serviceProofSha256": "843de2b41c6855eec4cd16ec605fd43d8d249a0be82a5ba17ba41b4de942f2e8",
+    "archive": "shared-solver/routes/generated/260923-pr532e/evidence-pr532e-r1.tar.gz",
+    "archiveSha256": "a86659584c423cc7bf670564ed4a1dbf156fbd8dd97880cf72aa803a70fae228"
+  }
+}
