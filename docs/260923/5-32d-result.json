@@ -1,0 +1,326 @@
+{
+  "schema": "motapathfinder.pr532d.result-summary.v1",
+  "milestone": "PR-5.32d — P14 Dominance Witness Audit",
+  "status": {
+    "verification": "VERIFIED",
+    "disposition": "SAFE_REPRESENTATIVE",
+    "review": "NOT_INDEPENDENTLY_REVIEWED",
+    "acceptance": "PENDING_OWNER",
+    "implementation": "NONE — observer-only audit"
+  },
+  "question": "Did Control's P14 dominance rejection discard future TS14 capability, or only replace the witness lineage with a same-DP-key representative?",
+  "provenance": {
+    "solverCommit": "7de00f27d13312cf26f45db92512a4bf68250a48",
+    "diagnosticRunSourceCommit": "7de00f27d13312cf26f45db92512a4bf68250a48",
+    "bundleManifestSha256": "edcb5ccf5fed19bca6e86cb21e86f431e0102cdcb2b8faa2fe08644590f63b37",
+    "solverDigest": "c40de1ab5d2dd3e78873fe5fd97e7d00d9e46487e3d59bd86b8fcdace5a82e05",
+    "problemFingerprint": "0ca7d0b09e97dac015a8dc36e14988764b52185ae2ed5d63e3db8a3d6e0dec78",
+    "resumeSearchFingerprint": "102621e2c9153f1af279fa604e5e9611b1190a7e3da5dcb2f6a9c7c46089bf0c",
+    "executionIdentity": "509da7c9d44e35a322a2ef5307bb2a35632db8d1e138f7886bc9baeb040b0d61",
+    "effectiveOptionsSameAsOriginalControlAfterRemovingObserverCapture": true,
+    "witnessAbsentBeforeSearchAndNotLoadedDuringSearch": true,
+    "postSearchWitnessAnalysisOnly": true,
+    "bundleFilesVerified": 1262,
+    "bundlePostRunDriftCount": 0
+  },
+  "controlReplayCompatibility": {
+    "eventStreamsByteIdentical": true,
+    "eventStreamSha256OriginalAndDiagnostic": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "eventStreamBytes": 112923079,
+    "eventStreamLines": 181653,
+    "p13ExactStateEventCount": 3,
+    "p13Events": [
+      "skylineInserted@31261 node=81531",
+      "skylineInserted@31356 node=81710",
+      "agendaPopped@31356 node=81710 source=continuation-slice"
+    ],
+    "p14TargetExactStateDominanceRejectionCount": 2,
+    "reportNormalizedCoreProjectionEqual": true,
+    "reportDifferenceCount": 29,
+    "unclassifiedSemanticReportDifferences": 0,
+    "reportDifferencesWere": [
+      "run/evidence identity fields",
+      "observer capture mode and observer capture time",
+      "wall-clock, throughput, cache timing and memory measurements"
+    ]
+  },
+  "search": {
+    "expansions": 32000,
+    "frontierSize": 44885,
+    "foundGoal": false,
+    "searchComplete": false,
+    "actionTrimmed": 0,
+    "expansionBudgetExhausted": true,
+    "globalPopFloors": {
+      "TS13": 25322,
+      "TS12": 5917,
+      "TS11": 761
+    },
+    "slice": {
+      "windowsOpened": 1633,
+      "windowExpansionCount": 29890,
+      "localPopCount": 28257,
+      "maxWindowExpansions": 32
+    }
+  },
+  "p14": {
+    "preState": {
+      "floorId": "TS13",
+      "hero": {
+        "hp": 1907,
+        "atk": 8,
+        "def": 1,
+        "mdef": 0,
+        "level": 3,
+        "exp": 7,
+        "loc": {
+          "x": 4,
+          "y": 2,
+          "direction": "down"
+        },
+        "steps": 295,
+        "battleDamage": 20193
+      },
+      "exactStateKeySha256": "927381556431c13c0c0197eb2b39474a502a2f88480709fbcdee5d13ca994e7b",
+      "routeReplayCounters": {
+        "decisionDepth": 42,
+        "routeLength": 98
+      },
+      "liveControlPop": {
+        "nodeId": 81710,
+        "parentId": 2632,
+        "expansion": 31356,
+        "source": "continuation-slice",
+        "decisionDepth": 44,
+        "routeLength": 100
+      }
+    },
+    "action": {
+      "kind": "battle",
+      "summary": "battle:skeletonCaptain@TS13:5,6",
+      "fingerprint": "battle|TS13|5,6|skeletonCaptain",
+      "routeDecisionIndex": 43,
+      "path": [
+        "down",
+        "down",
+        "right",
+        "down"
+      ],
+      "stance": {
+        "floorId": "TS13",
+        "x": 5,
+        "y": 5
+      },
+      "target": {
+        "floorId": "TS13",
+        "x": 5,
+        "y": 6
+      },
+      "estimate": {
+        "damage": 1040,
+        "turn": 53,
+        "exp": 1
+      }
+    },
+    "candidatePostState": {
+      "floorId": "TS13",
+      "hero": {
+        "hp": 2667,
+        "atk": 8,
+        "def": 1,
+        "mdef": 0,
+        "level": 3,
+        "exp": 8,
+        "loc": {
+          "x": 5,
+          "y": 5,
+          "direction": "down"
+        },
+        "steps": 299,
+        "battleDamage": 21233
+      },
+      "exactStateKeySha256": "ee902262dd212915db41ad767c8b831853088f51fc1bc7e83537789d1e97b6f0",
+      "dpKeySha256": "e0b3337ceaa6a4922a27e1dcf528e5c6fc8d37518a9cae38883691fe7bb18edd",
+      "routeReplayCounters": {
+        "decisionDepth": 43,
+        "routeLength": 102
+      },
+      "liveRejectionCounterEvidence": {
+        "candidateDecisionDepth": 45,
+        "candidateRouteLengthByComparator": 104,
+        "incumbentDecisionDepth": 45,
+        "incumbentRouteLength": 104
+      },
+      "searchEventFullCandidateStateCaptured": false,
+      "fullKeyBoundMechanicsSnapshot": "shared-solver/routes/generated/260923-pr532d-p14-audit/evidence-r1/runs/p14-audit-32k/p14-audit-result.json"
+    },
+    "exactDpKey": {
+      "sha256": "e0b3337ceaa6a4922a27e1dcf528e5c6fc8d37518a9cae38883691fe7bb18edd",
+      "serialization": {
+        "floorId": "TS13",
+        "keyMode": "location",
+        "regionKey": "TS13:5,5",
+        "reachableEndpointsKey": "",
+        "hero": {
+          "atk": 8,
+          "def": 1,
+          "mdef": 0,
+          "lv": 3,
+          "exp": 8,
+          "money": 0,
+          "mana": 0,
+          "equipment": [],
+          "followers": []
+        },
+        "inventory": {
+          "greenKey": 34
+        },
+        "flags": {
+          "__leaveLoc__": {
+            "TS11": {
+              "x": 6,
+              "y": 12,
+              "direction": "down"
+            },
+            "TS12": {
+              "x": 1,
+              "y": 1,
+              "direction": "left"
+            },
+            "TS13": {
+              "x": 1,
+              "y": 1,
+              "direction": "left"
+            }
+          },
+          "autoBattle": 1,
+          "hatred": 76,
+          "jc19f5": 1,
+          "nowatk": 1,
+          "nowlevel": 1,
+          "saltygreen": 2,
+          "shiqu": 1
+        },
+        "visitedFloors": [
+          "TS11",
+          "TS12",
+          "TS13"
+        ],
+        "mutations": [
+          {
+            "floorId": "TS11",
+            "removed": [
+              "1,5", "1,6", "1,7", "10,4", "10,9", "11,5", "11,6", "11,7", "2,4", "2,9", "3,5", "3,7", "4,4", "4,6", "4,9", "6,10", "6,3", "6,4", "6,7", "6,8", "6,9", "8,4", "8,6", "8,9", "9,5", "9,7"
+            ],
+            "replaced": []
+          },
+          {
+            "floorId": "TS12",
+            "removed": [
+              "1,10", "1,11", "1,9", "10,11", "10,2", "10,5", "10,7", "10,8", "10,9", "11,1", "11,10", "11,3", "11,6", "2,1", "3,10", "3,11", "3,2", "3,3", "3,5", "3,6", "3,9", "4,11", "4,7", "5,11", "5,2", "5,5", "5,7", "5,9", "6,1", "6,3", "6,5", "6,7", "6,9", "7,10", "7,3", "7,4", "7,5", "8,2", "8,6", "8,7", "8,9", "9,3", "9,5", "9,9"
+            ],
+            "replaced": []
+          },
+          {
+            "floorId": "TS13",
+            "removed": [
+              "1,3", "1,4", "10,5", "10,8", "11,4", "11,6", "2,2", "2,5", "3,2", "4,2", "4,3", "4,5", "4,7", "4,9", "5,2", "5,4", "5,6", "5,8", "6,2", "7,2", "7,3", "7,4", "7,6", "7,7", "7,8", "8,5", "9,5", "9,8"
+            ],
+            "replaced": []
+          }
+        ]
+      },
+      "candidateAndIncumbentDpKeyEqual": true
+    },
+    "incumbent": {
+      "nodeId": 1339,
+      "parentId": 1333,
+      "hero": {
+        "hp": 2761,
+        "atk": 8,
+        "def": 1,
+        "mdef": 0,
+        "level": 3,
+        "exp": 8,
+        "loc": {
+          "x": 5,
+          "y": 5,
+          "direction": "down"
+        },
+        "steps": 331,
+        "battleDamage": 21139
+      },
+      "exactStateKeySha256": "cb0376788d6d8c7522cfeef30aa90954f8232445e07f610107e072434029955f",
+      "sameDpKeyAsCandidate": true,
+      "decisionDepth": 45,
+      "routeLength": 104,
+      "lifecycle": {
+        "insertedAtExpansion": 399,
+        "poppedAtExpansion": 17967,
+        "popped": true
+      },
+      "dominanceComparison": {
+        "mode": "default-hp-depth-route",
+        "candidateMinusIncumbentHp": -94,
+        "candidateMinusIncumbentDecisionDepth": 0,
+        "candidateMinusIncumbentRouteLength": 0,
+        "firstDecidingField": "hp"
+      }
+    },
+    "executableActions": {
+      "candidateStateSource": "post-search strict-replay witness snapshot bound to the rejected candidate exact-state key",
+      "incumbentStateSource": "captured live search node 1339",
+      "candidateGenerated": 7,
+      "incumbentGenerated": 7,
+      "commonGenerated": 7,
+      "candidateOnly": 0,
+      "incumbentOnly": 0,
+      "commonExecutable": 7,
+      "commonSuccessorsEqualExceptHp": 7,
+      "commonSuccessorsDifferentBeyondHp": 0,
+      "criticalP15": {
+        "action": "battle:skeleton@TS13:2,6",
+        "candidateExecutable": true,
+        "incumbentExecutable": true,
+        "incumbentResolutionUsedTeacherPostEvidence": false,
+        "candidateNextHp": 4809,
+        "incumbentNextHp": 4903
+      }
+    },
+    "suffixReplay": {
+      "actionsFromP15": 16,
+      "candidatePositiveControl": {
+        "complete": true,
+        "reachedGoalFloor": "TS14",
+        "finalHp": 5609
+      },
+      "incumbent": {
+        "complete": true,
+        "all16ActionsExecutable": true,
+        "all16NonHpStateKeysMatchWitness": true,
+        "firstNonHpDivergence": null,
+        "exactStateRejoin": false,
+        "reachedGoalFloor": "TS14",
+        "finalHp": 5703
+      }
+    }
+  },
+  "limitations": [
+    "This establishes safety only for this same-key representative and the recorded P15+ witness suffix; it is not a universal proof of every dominance decision.",
+    "The offline simulator replay proves future capability from the incumbent state, not that the bounded search would pop every suffix node before its 32k limit.",
+    "The observer event contains the rejected candidate key and comparison summary, not a full private DP node. Full pre/post simulator snapshots are reconstructed from the post-search verified route and bound by exact-state keys; route/depth counters differ from live DP metadata by +2 in this capture, and the cause is not independently established.",
+    "No autonomous goal was found by this 32k search; this audit does not close the full route search or authorize production.",
+    "Original production run remains paused/read-only; current evidence: paused, activeTask null, 43 nodes, STOP present, search service inactive."
+  ],
+  "artifacts": {
+    "cloudEvidenceRoot": "/home/ubuntu/motapath-solver/probes/pr532d-p14-dominance-r1/",
+    "cloudRawEventStreamSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "compactEvidenceTar": "shared-solver/routes/generated/260923-pr532d-p14-audit/evidence-pr532d-p14-audit-r1.tar.gz",
+    "compactEvidenceTarSha256": "0bab62b2ef8de55e1190697b735e305a84963d860227e3a6b2d7fde982c39a21",
+    "fullAuditResultPath": "shared-solver/routes/generated/260923-pr532d-p14-audit/evidence-r1/runs/p14-audit-32k/p14-audit-result.json",
+    "fullAuditResultSha256": "9fefbcaddd10a2375acc448861d1d5880bc594ad323e4c827129d2474ca6dde7",
+    "capturedRejectionsPath": "shared-solver/routes/generated/260923-pr532d-p14-audit/evidence-r1/runs/p14-audit-32k/p14-dominance-witnesses.json",
+    "capturedRejectionsSha256": "bdaf8062c43dd98031f7e765eb5d3ba847d5da6ad14c68de91feeb7b8d303f21",
+    "diagnosticReportSha256": "318b77f9c644894acf9c63281369977c8f2c48212b2abdecfa7d0de0b9d311e8"
+  }
+}
