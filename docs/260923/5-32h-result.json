@@ -1,0 +1,132 @@
+{
+  "schema": "pr532h-dual-origin-bounded-continuation-result-v1",
+  "milestone": "PR-5.32h",
+  "implementationStatus": "VERIFIED",
+  "experimentOutcome": "NOT_PROMOTED",
+  "sourceCommit": "af69dc1229d086715171f9fc9f635c5c2bcac4ae",
+  "bundle": {
+    "remotePath": "/home/ubuntu/motapath-solver/probes/pr532h-af69dc1-r3/",
+    "manifestSha256": "8d8f54af0651846be6e17b1540195b066ac2d8c1d594470b377d72c8d888f12e",
+    "sourceArchiveSha256": "64b79de1140331216ea16be196cf58f923f95fc30561ff6dfec6bd8b6358cb1d",
+    "manifestFileCount": 1727,
+    "problemFingerprint": "0ca7d0b09e97dac015a8dc36e14988764b52185ae2ed5d63e3db8a3d6e0dec78",
+    "solverDigest": "61f88f11d9897ef62dd7029089d075268896e0afa1a0b35062d2439d2a2648d4",
+    "initialSha256": "c87aaefbebea65e77c4791ee65d8241f5d63c44e1a315b4067764ceb2f1ec04b",
+    "seedSha256": "68c230b811e9d763f1f2e672b6707233f1a8b395c477d34406c931105c2c8022",
+    "onlyTreatmentDelta": "continuationSlice.dualOriginBoundedService: absent -> true",
+    "witnessInSearchInputs": false,
+    "postRunBundleDrift": 0
+  },
+  "protocol": {
+    "stageGoal": "TS14",
+    "sameCommitSeedInitialAndProblem": true,
+    "expansionBudgetPerArm": 32000,
+    "dpPriorityMode": "goal-relative",
+    "dpAgendaMode": "hybrid-fair",
+    "fairnessEvery": 4,
+    "continuationSliceK": 32,
+    "localPriorityMode": "inherit",
+    "controlDualOrigin": false,
+    "treatmentDualOrigin": true,
+    "freshRunDirectories": true
+  },
+  "control": {
+    "runDirectory": "runs/control-32k",
+    "expansions": 32000,
+    "foundGoal": false,
+    "searchComplete": false,
+    "budgetExhausted": true,
+    "actionTrimmed": 0,
+    "observerErrors": 0,
+    "frontierSize": 44885,
+    "wallMs": 321065,
+    "continuationSlices": 1633,
+    "continuationLocalExpansions": 29890,
+    "longestOrderedTeacherExactPopPrefix": 13,
+    "firstMissingTeacherTarget": {
+      "decision": 43,
+      "description": "battle:skeletonCaptain@TS13:5,6",
+      "exactKeySha256": "ee902262dd212915db41ad767c8b831853088f51fc1bc7e83537789d1e97b6f0",
+      "observedDominanceRejectedCandidates": 2
+    },
+    "eventStreamSha256Raw": "5de4c90e0a032a57922958946a7c4f11508e8f92354ed3b9a63b32dba5bf13d2",
+    "eventStreamSha256AfterRemovingCollectorAddedNullContinuationOrigin": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+    "historicalControlEventSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7"
+  },
+  "treatment": {
+    "runDirectory": "runs/treatment-32k",
+    "expansions": 32000,
+    "foundGoal": false,
+    "searchComplete": false,
+    "budgetExhausted": true,
+    "actionTrimmed": 0,
+    "observerErrors": 0,
+    "frontierSize": 47334,
+    "frontierDeltaVsControl": 2449,
+    "wallMs": 333770,
+    "continuationSlices": 1279,
+    "continuationLocalExpansions": 31078,
+    "handoffs": 12279,
+    "native": {
+      "expansions": 16071,
+      "admitted": 44310,
+      "acceptedDescendants": 44682
+    },
+    "borrowed": {
+      "expansions": 15007,
+      "admitted": 49477,
+      "acceptedDescendants": 38115
+    },
+    "duplicateExpansionPrevented": 0,
+    "perSliceService": {
+      "verifiedFromEventsAndDiagnostics": true,
+      "allConsumedAtMostK": true,
+      "nativePlusBorrowedEqualsConsumed": true,
+      "availabilityAwareWorkConservingAlternation": true,
+      "rootServedAsNative": true,
+      "allNodesExpandedAtMostOnce": true,
+      "totalConsumed": 31078
+    },
+    "longestOrderedTeacherExactPopPrefix": 11,
+    "firstMissingTeacherTarget": {
+      "decision": 41,
+      "description": "battle:bat@TS13:1,3",
+      "exactKeySha256": "aad8c88f3f5e42f03dc519667d7ce1329f06a3c741a62f6d5e93701c23a9cb74",
+      "acceptedInsertions": [
+        { "at": 1199, "node": 3562, "parent": 3551 },
+        { "at": 9275, "node": 24568, "parent": 24559 }
+      ],
+      "popsBy32000": 0
+    },
+    "eventStreamSha256Raw": "d12632dcde7f34a5b5bddc25e9629e7cf51e3ebec175b3c98c605dd360f90fbe"
+  },
+  "firstAgendaPopDivergence": {
+    "ordinal": 6,
+    "control": { "node": 21, "parent": 15, "atExpansion": 5 },
+    "treatment": { "node": 2, "parent": 0, "atExpansion": 5 }
+  },
+  "interpretation": {
+    "teacherPrefixMetric": "ordered occurrence of exact post-decision state keys among expanded nodes; this is a population/scheduling diagnostic, not proof of one continuous parent-linked teacher route",
+    "result": "Treatment does not improve the exact teacher-state frontier capability: its ordered prefix is shorter (11 vs 13), the first missing target is not expanded despite two accepted insertions, and final frontier is larger by 2449. No autonomous TS14 goal was found; no candidate existed for strict route replay or protected-key verification.",
+    "promotion": "NOT_PROMOTED; option remains default OFF",
+    "review": "No independent review performed",
+    "ownerAcceptance": "Pending"
+  },
+  "production": {
+    "state": "paused",
+    "current": null,
+    "nodes": 43,
+    "service": "inactive",
+    "journalSha256": "980db6a3acb618df8c3f20b3a138a8180165d89bd4dd6a585a76da642ccb8126",
+    "statusSha256": "c16e55b0982e71591b11c9f2b0e6a83b124086b09dcef3e18328780370185ebe",
+    "stopSha256": "7906b011b68c5996864906975aef4b300a9220e3d0f592a384029f1cd3056d0d",
+    "productionStateUnchanged": true
+  },
+  "evidence": {
+    "remoteRawEventsRetained": true,
+    "remoteExperimentDirectory": "/home/ubuntu/motapath-solver/probes/pr532h-af69dc1-r3/",
+    "localSummary": "shared-solver/routes/generated/260923-pr532h/evidence-r1/analysis/result.json",
+    "localSummarySha256": "c0f6a193fcd208bcc9e49360b215729650283a700d9222bed357fbcaa817190e",
+    "note": "Raw control JSONL includes an observer-collector-only null continuationOrigin field added by the PR-5.32h runner. Removing only that null field reproduces the historical 5.32c/5.32f event bytes exactly; the raw event hashes are separately preserved above."
+  }
+}
