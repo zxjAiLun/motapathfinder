@@ -1,6 +1,6 @@
 "use strict";
 
-const { getTileDefinitionAt } = require("./state");
+const { floorHasCoordinate, getTileDefinitionAt } = require("./state");
 
 const DIRECTIONS = ["up", "right", "down", "left"];
 const DIRECTION_DELTAS = {
@@ -32,6 +32,24 @@ function isPassableTile(project, state, floorId, x, y) {
   return false;
 }
 
+// h5mota cannotIn names the side entered FROM, unlike cannotOut which
+// names the movement direction. Keep occupancy separate for bump actions.
+function canTraverseEdge(project, state, floorId, x, y, direction) {
+  const delta = DIRECTION_DELTAS[direction];
+  if (!delta || !floorHasCoordinate(project, floorId, x, y)) return false;
+  const nx = x + delta.x, ny = y + delta.y;
+  if (!floorHasCoordinate(project, floorId, nx, ny)) return false;
+  const opposite = DIRECTIONS[(DIRECTIONS.indexOf(direction) + 2) % 4];
+  const floor = project.floorsById[floorId];
+  const source = getTileDefinitionAt(project, state, floorId, x, y);
+  const target = getTileDefinitionAt(project, state, floorId, nx, ny);
+  const blocked = (values, value) => Array.isArray(values) && values.includes(value);
+  return !blocked((floor.cannotMove || {})[coordinateKey(x, y)], direction)
+    && !blocked((floor.cannotMoveIn || {})[coordinateKey(nx, ny)], opposite)
+    && !blocked(source && source.cannotOut, direction)
+    && !blocked(target && target.cannotIn, opposite);
+}
+
 function buildReachability(project, state) {
   const floor = project.floorsById[state.floorId];
   const start = { x: state.hero.loc.x, y: state.hero.loc.y };
@@ -57,6 +75,7 @@ function buildReachability(project, state) {
       const nextX = current.x + delta.x;
       const nextY = current.y + delta.y;
       if (nextX < 0 || nextY < 0 || nextX >= floor.width || nextY >= floor.height) return;
+      if (!canTraverseEdge(project, state, state.floorId, current.x, current.y, direction)) return;
       if (!isPassableTile(project, state, state.floorId, nextX, nextY)) return;
 
       const nextKey = coordinateKey(nextX, nextY);
@@ -98,6 +117,7 @@ module.exports = {
   DIRECTIONS,
   DIRECTION_DELTAS,
   buildReachability,
+  canTraverseEdge,
   coordinateKey,
   isDoorTile,
   isEnemyTile,

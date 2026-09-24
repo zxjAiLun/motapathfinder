@@ -483,6 +483,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": true,
     "notes": "PR-5.17a1 real D2 blocked evilHero repair, circular I1009 rejection, startable I1014 selection, first prerequisite strict replay, and empty-portfolio negative control"
   },
+  "shared-solver/check-directional-movement.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.32l one-way tile/floor direction parity, rejected-edge revisit, automatic pickup, removed arrow, direct step and safe/exact walking. Actual TS15 browser replay evidence is separate."
+  },
   "shared-solver/check-green-key-budget.js": {
     "grade": "unit-plus-micro",
     "allowsNotFound": false,
@@ -1951,6 +1958,7 @@ const manifest = {
         "shared-solver/check-continuation-slice-contract.js",
         "shared-solver/check-continuation-confluence-contract.js",
         "shared-solver/check-green-key-budget.js",
+        "shared-solver/check-directional-movement.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",

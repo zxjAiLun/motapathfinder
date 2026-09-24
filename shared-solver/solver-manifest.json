@@ -226,6 +226,7 @@
         "shared-solver/check-continuation-slice-contract.js",
         "shared-solver/check-continuation-confluence-contract.js",
         "shared-solver/check-green-key-budget.js",
+        "shared-solver/check-directional-movement.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
@@ -3300,6 +3301,13 @@
       "requiresStrictReplay": true,
       "cleanCheckout": true,
       "notes": "PR-5.25m structural prerequisite frontier identification & dual-queue priority search: Phase 1 route-free corridor macro graph candidate identification and witness recall qualification; Phase 2 prerequisite-prioritized search qualification (CONTROL = repaired transport-collapsed FIFO, TREATMENT = identical search + dependency-frontier bounded-fair dual queue, 180s/2GB/120k budget, one search per child process)"
+    },
+    "shared-solver/check-directional-movement.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": false,
+      "cleanCheckout": true,
+      "notes": "PR-5.32l one-way tile/floor direction parity, rejected-edge revisit, automatic pickup, removed arrow, direct step and safe/exact walking. Actual TS15 browser replay evidence is separate."
     },
     "shared-solver/check-discovery-capability-audit.js": {
       "grade": "unit",

@@ -12,7 +12,7 @@ const { scoutChangeFloor } = require("./floor-scout");
 const { createResourceLookaheadCache, evaluateActionResourceLookahead } = require("./resource-lookahead");
 const { enumerateResourceClusterActions } = require("./resource-cluster");
 const { buildSearchConfluenceKey: buildSharedSearchConfluenceKey, compareConfluenceResources } = require("./confluence-key");
-const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
+const { DIRECTIONS, DIRECTION_DELTAS, canTraverseEdge, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
 const { UnsupportedBattleResolver } = require("./battle-resolver");
 const { buildDominanceBucketKey, buildDominanceSummary, dominatesSummary } = require("./dominance");
 const { GenericDoorResolver } = require("./door-resolver");
@@ -295,6 +295,7 @@ function findAdjacencyActions(project, reachability, predicate, buildAction) {
       const delta = DIRECTION_DELTAS[direction];
       const targetX = node.x + delta.x;
       const targetY = node.y + delta.y;
+      if (!canTraverseEdge(project, lookupState, lookupState.floorId, node.x, node.y, direction)) return;
       const tile = getTileDefinitionAt(project, lookupState, lookupState.floorId, targetX, targetY);
       if (!predicate(node, tile, targetX, targetY, lookupState)) return;
 

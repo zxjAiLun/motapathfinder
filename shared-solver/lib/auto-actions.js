@@ -2,7 +2,7 @@
 
 const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
-const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
+const { DIRECTIONS, DIRECTION_DELTAS, canTraverseEdge, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
 const { appendRouteStep, floorHasCoordinate, getTileDefinitionAt } = require("./state");
 
 const AUTO_BATTLE_BLOCKED_SPECIALS = [
@@ -72,6 +72,7 @@ function collectTargets(project, state, options) {
       const key = coordinateKey(x, y);
       if (visited.has(key)) continue;
       if (!floorHasCoordinate(project, floorId, x, y)) continue;
+      if (!canTraverseEdge(project, state, floorId, current.x, current.y, DIRECTIONS[i])) continue;
 
       const tile = getTileDefinitionAt(project, state, floorId, x, y);
       const target = options.evaluateTarget(project, state, tile, x, y);
@@ -108,6 +109,7 @@ function collectNearTargets(project, state, options) {
     const x = state.hero.loc.x + delta.x;
     const y = state.hero.loc.y + delta.y;
     if (!floorHasCoordinate(project, floorId, x, y)) continue;
+    if (!canTraverseEdge(project, state, floorId, state.hero.loc.x, state.hero.loc.y, DIRECTIONS[i])) continue;
     const tile = getTileDefinitionAt(project, state, floorId, x, y);
     const target = options.evaluateTarget(project, state, tile, x, y);
     if (!target) continue;

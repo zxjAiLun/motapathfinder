@@ -2,7 +2,7 @@
 
 const { runAutoEvents } = require("./events");
 const { buildMovementHazards } = require("./movement-hazards");
-const { DIRECTIONS, DIRECTION_DELTAS, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
+const { DIRECTIONS, DIRECTION_DELTAS, canTraverseEdge, coordinateKey, isDoorTile, isEnemyTile } = require("./reachability");
 const { buildDominanceKey, buildStateKey, hasDirectionalStateSensitivity } = require("./state-key");
 const {
   cloneState,
@@ -157,6 +157,7 @@ function applyLandingHazards(project, state, options, hazardCache) {
 function stepOntoTile(project, state, direction, options, hazardCache) {
   const config = options || {};
   const delta = DIRECTION_DELTAS[direction];
+  if (!canTraverseEdge(project, state, state.floorId, state.hero.loc.x, state.hero.loc.y, direction)) return null;
   const nextX = state.hero.loc.x + delta.x;
   const nextY = state.hero.loc.y + delta.y;
   const predicate = config.predicate || isStepPassableTile;
@@ -393,6 +394,7 @@ function buildSafeWalkSkeleton(project, state) {
       const nextY = node.y + delta.y;
       const coordinate = coordinateKey(nextX, nextY);
       if (seenCoordinates.has(coordinate)) return;
+      if (!canTraverseEdge(project, state, state.floorId, node.x, node.y, direction)) return;
       if (!isTransitTile(project, state, state.floorId, nextX, nextY)) return;
       seenCoordinates.add(coordinate);
 

@@ -1,0 +1,150 @@
+{
+  "schema": "pr532k-one-green-key-result-v1",
+  "status": "VERIFIED",
+  "promotion": "NOT_PROMOTED",
+  "sourceCommit": "fbe134d43642bbe1dae61d5c7c2be253d96fc92e",
+  "budget": {
+    "greenKey": 1,
+    "kind": "campaign gross consumption"
+  },
+  "arms": {
+    "control": {
+      "expansions": 32000,
+      "foundGoal": false,
+      "frontierSize": 44885,
+      "searchOutcome": {
+        "goalFound": false,
+        "frontierExhausted": false,
+        "budgetExhausted": true,
+        "searchComplete": false,
+        "outcomeClass": "goal-not-found-search-incomplete"
+      },
+      "wallMs": 318667,
+      "byFloor": {
+        "TS13": {
+          "expansions": 25322,
+          "maxHp": 5203,
+          "maxAtk": 9
+        },
+        "TS12": {
+          "expansions": 5917,
+          "maxHp": 4701,
+          "maxAtk": 9
+        },
+        "TS11": {
+          "expansions": 761,
+          "maxHp": 3109,
+          "maxAtk": 9
+        }
+      },
+      "goalCount": 0,
+      "eventSha256": "da02e10e4c66ace160b9c9b94306fbc249321b0ca7aa1b5b36d99b6d92a237d7",
+      "reportSha256": "091bfe8ea0bf1a0d81526964a27fd5d889562e78d16e09d7855f48d4279a5642",
+      "status": {
+        "state": "completed",
+        "probeExecutionId": "7b2724f2c58fad02e0ac1a95bfe82492ae0fbf8e65af8b3442744ce9a17e81b2",
+        "expansions": 32000,
+        "foundGoal": false,
+        "wallMs": 318667,
+        "time": "2026-09-24T11:57:50.261Z"
+      }
+    },
+    "treatment": {
+      "expansions": 32000,
+      "foundGoal": true,
+      "frontierSize": 47851,
+      "searchOutcome": {
+        "goalFound": true,
+        "frontierExhausted": false,
+        "budgetExhausted": true,
+        "searchComplete": false,
+        "outcomeClass": "goal-found-search-incomplete"
+      },
+      "wallMs": 328599,
+      "byFloor": {
+        "TS13": {
+          "expansions": 25304,
+          "maxHp": 27308,
+          "maxAtk": 17
+        },
+        "TS12": {
+          "expansions": 5884,
+          "maxHp": 4701,
+          "maxAtk": 13
+        },
+        "TS11": {
+          "expansions": 812,
+          "maxHp": 3109,
+          "maxAtk": 13
+        }
+      },
+      "goalCount": 16,
+      "eventSha256": "b560abf61f8c41b23662a5d528e6b26a23425ef7e32d774ababcbdfcbf5bdf65",
+      "reportSha256": "a0dfbedfdc09ea593862496b7896e1019106bd28a3cec805fdbaf721e87aad37",
+      "status": {
+        "state": "completed",
+        "probeExecutionId": "440209db193892ec6730b7a824f24c3ac8f01ed2f3d5eec42f37346185c11ad9",
+        "expansions": 32000,
+        "foundGoal": true,
+        "wallMs": 328599,
+        "time": "2026-09-24T05:35:32.685Z"
+      }
+    }
+  },
+  "ts14Recovery": {
+    "passed": 16,
+    "originalInitialSha256": "c87aaefbebea65e77c4791ee65d8241f5d63c44e1a315b4067764ceb2f1ec04b",
+    "searchLineageMatched": true,
+    "representativeLiveSteps": 45,
+    "representativeLiveGross": 1,
+    "evidence": {
+      "path": "shared-solver/routes/generated/260924-pr532k/recovery-r3/result.json",
+      "sha256": "e2c50ba79dab60495cfc34b046fd8da5991235600e6c5529c4779781476f8d6e"
+    }
+  },
+  "ts15OldModel": {
+    "expansions": 32000,
+    "frontierSize": 80318,
+    "wallMs": 593037,
+    "goalCount": 16,
+    "internalStrictPassCount": 16,
+    "runtimeStatus": "REJECTED: original goal0 step70 HP mismatch of25600; all old seeds ineligible pending corrected revalidation",
+    "evidence": {
+      "path": "shared-solver/routes/generated/260924-pr532k/live-ts15-goal0-r2.json",
+      "sha256": "8a7b3b29fc8095c34d01bc1376da06792bcaa9011b0d02aeca1bea8d2b14d8df"
+    }
+  },
+  "boss": {
+    "state": "STOPPED_BY_PARENT",
+    "reason": "runtime invalidated old TS15 seed",
+    "lastObservedExpansions": 16000,
+    "exactFinalExpansionCount": null,
+    "searchCompleted": false,
+    "bossVerified": false
+  },
+  "correctedTs15": {
+    "milestone": "PR-5.32l",
+    "verifiedCount": 1,
+    "decisions": 74,
+    "hp": 36397,
+    "atk": 34,
+    "grossGreenKey": 1,
+    "browserPass": true
+  },
+  "isolation": {
+    "bundleFiles": 1728,
+    "drift": [],
+    "productionHashes": {
+      "journal.json": "980db6a3acb618df8c3f20b3a138a8180165d89bd4dd6a585a76da642ccb8126",
+      "status.json": "c16e55b0982e71591b11c9f2b0e6a83b124086b09dcef3e18328780370185ebe",
+      "STOP": "7906b011b68c5996864906975aef4b300a9220e3d0f592a384029f1cd3056d0d"
+    },
+    "service": "inactive"
+  },
+  "limitations": [
+    "No zero-key impossibility proof",
+    "No Boss closure or optimality proof",
+    "No corrected-code same-budget search comparison",
+    "Independent review and owner acceptance pending"
+  ]
+}
