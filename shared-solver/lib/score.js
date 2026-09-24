@@ -92,6 +92,20 @@ function estimateGoalRelativeDistance(state, project, stageGoal) {
     }
   }
 
+  if (pendingRemoval) {
+    // Earlier floors reach an entrance of the target room, not the removal
+    // coordinate itself. Include that last leg; otherwise stepping back onto
+    // the previous stair incorrectly gets distance zero while the Boss lives.
+    const entrances = Object.entries(removalFloor.changeFloor || {})
+      .filter(([, transition]) => transition && transition.floorId === ":before")
+      .map(([loc]) => loc.split(",").map(Number))
+      .filter(([x, y]) => Number.isInteger(x) && Number.isInteger(y)
+        && x >= 0 && y >= 0 && x < removalFloor.width && y < removalFloor.height);
+    if (entrances.length > 0) {
+      transitPenalty += Math.min(...entrances.map(([x, y]) =>
+        Math.abs(x - removal.x) + Math.abs(y - removal.y)));
+    }
+  }
   return localDist + transitPenalty;
 }
 

@@ -22,7 +22,13 @@ assert.equal(estimateGoalRelativeDistance(state, project, goal), 4, "pending rem
 assert.equal(estimateGoalRelativeDistance({ ...state, hero: { loc: { x: 2, y: 1 } } }, project, goal), 1);
 assert.equal(estimateGoalRelativeDistance({ ...state, hero: { loc: { x: 3, y: 1 } } }, project, goal), 0);
 const lower = { ...state, floorId: "P1" };
-assert.equal(estimateGoalRelativeDistance(lower, project, goal), 4, "lower floors project toward removal floor");
+assert.equal(estimateGoalRelativeDistance(lower, project, goal), 8, "include the final room's entry-to-removal leg");
+const previousStair = { ...lower, hero: { loc: { x: 3, y: 1 } } };
+assert.equal(estimateGoalRelativeDistance(previousStair, project, goal), 4, "stepping back onto the previous stair cannot masquerade as reaching the target");
+const multipleEntries = { ...project, floorsById: { ...project.floorsById, P2: floor("P2", { "0,0": { floorId: ":before" }, "3,0": { floorId: ":before" } }) } };
+assert.equal(estimateGoalRelativeDistance(lower, multipleEntries, goal), 5, "use the shortest declared terminal-room entry leg");
+const unknownEntry = { ...project, floorsById: { ...project.floorsById, P2: floor("P2") } };
+assert.equal(estimateGoalRelativeDistance(lower, unknownEntry, goal), 4, "do not invent an entrance when the model has none");
 const cleared = { ...state, floorStates: { P2: { removed: { "3,1": true } } } };
 assert.equal(estimateGoalRelativeDistance(cleared, project, goal), Infinity, "completed anchor must not keep attracting service");
 assert.equal(estimateGoalRelativeDistance(lower, project, { floorId: "P2" }), 4, "normal floor-only behavior unchanged");
