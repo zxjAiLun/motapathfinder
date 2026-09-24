@@ -47,6 +47,7 @@ function problemFingerprint(config, towerRoot) {
     initial: config.initial,
     stages: config.stages,
     protectedItems: config.protectedItems,
+    ...(config.protectedSpendLimits ? { protectedSpendLimits: config.protectedSpendLimits } : {}),
     allowedFloors: config.allowedFloors,
     tower: treeDigest(path.join(towerRoot, "project")),
   }));
@@ -68,6 +69,7 @@ function searchSemantics(config) {
     fairnessEvery: Math.max(1, Math.floor(Number(cfg.fairnessEvery) || 32)),
     fairOrderMode: cfg.fairOrderMode || "fifo",
     maxActionsPerState: Math.max(1, Math.floor(Number(cfg.maxActionsPerState) || 4096)),
+    ...(cfg.protectedSpendLimits ? { protectedSpendLimits: cfg.protectedSpendLimits } : {}),
     // Reserved for PR-5.32a; fingerprinted now so enabling it later invalidates
     // resume of runs made without it.
     continuationSlice: {
@@ -132,19 +134,57 @@ function validateConfig(config) {
   if (!(config.maxRssMb > 0) || !(config.heapMb > 0)) throw new Error("run memory limits required");
   if (config.maxRuntimeMs != null && config.maxRuntimeMs < 0) throw new Error("maxRuntimeMs must be non-negative");
   if (!Array.isArray(config.allowedFloors) || !config.allowedFloors.includes(config.initial.floorId)) throw new Error("allowedFloors must include start");
+  if (config.protectedSpendLimits != null) {
+    const limits = config.protectedSpendLimits;
+    if (!limits || typeof limits !== "object" || Array.isArray(limits)
+      || Object.keys(limits).length !== 1 || !Object.hasOwn(limits, "greenKey")
+      || !(config.protectedItems || []).includes("greenKey")
+      || !Number.isInteger(limits.greenKey) || limits.greenKey < 0 || limits.greenKey > 1) {
+      throw new Error("protectedSpendLimits supports only protected greenKey with integer cap 0 or 1");
+    }
+  }
 }
-function protectedCost(action, config) {
-  return (config.protectedItems || []).some((id) => Number((action.requirements || {})[id] || 0) > 0);
+const GREEN_SPENT_FLAG = "__solverGreenKeySpent__";
+function spentGreenKey(state) {
+  const amount = Number(state?.flags?.[GREEN_SPENT_FLAG] || 0);
+  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error("invalid cumulative green-key spend");
+  return amount;
+}
+function protectedCost(action, config, state) {
+  return (config.protectedItems || []).some((id) => {
+    const cost = Number((action.requirements || {})[id] || 0);
+    if (!(cost > 0)) return false;
+    if (id === "greenKey" && config.protectedSpendLimits?.greenKey != null) {
+      return !Number.isSafeInteger(cost) || spentGreenKey(state) + cost > config.protectedSpendLimits.greenKey;
+    }
+    return true;
+  });
 }
 function assertProtected(before, after, config) {
   for (const id of config.protectedItems || []) {
-    if (Number(after.inventory[id] || 0) < Number(before.inventory[id] || 0)) throw new Error(`protected item decreased: ${id}`);
+    const delta = Number(before.inventory[id] || 0) - Number(after.inventory[id] || 0);
+    if (id === "greenKey" && config.protectedSpendLimits?.greenKey != null) {
+      const earlier = spentGreenKey(before), later = spentGreenKey(after);
+      if (later < earlier || later > config.protectedSpendLimits.greenKey || delta > later - earlier)
+        throw new Error("green-key spend exceeds budget or is unaccounted");
+    } else if (delta > 0) throw new Error(`protected item decreased: ${id}`);
   }
 }
 function makeSimulator(project, config) {
   const doors = new GenericDoorResolver();
   const canOpen = doors.canOpenDoor.bind(doors);
-  doors.canOpenDoor = (ctx) => canOpen(ctx) && !protectedCost({ requirements: ctx.tile.doorInfo && ctx.tile.doorInfo.keys }, config);
+  doors.canOpenDoor = (ctx) => canOpen(ctx) && !protectedCost({ requirements: ctx.tile.doorInfo && ctx.tile.doorInfo.keys }, config, ctx.state);
+  if (config.protectedSpendLimits?.greenKey != null) {
+    const open = doors.applyAction.bind(doors);
+    doors.applyAction = (ctx) => {
+      const cost = Number(ctx.action.requirements?.greenKey || 0);
+      if (cost > 0) {
+        if (protectedCost(ctx.action, config, ctx.state)) throw new Error("green-key spend exceeds budget");
+        ctx.state.flags[GREEN_SPENT_FLAG] = spentGreenKey(ctx.state) + cost;
+      }
+      return open(ctx);
+    };
+  }
   const sim = new StaticSimulator(project, {
     battleResolver: new FunctionBackedBattleResolver(project, { enableFastReject: true }),
     doorResolver: doors, autoPickupEnabled: true, autoBattleEnabled: true,
@@ -152,7 +192,7 @@ function makeSimulator(project, config) {
   });
   const apply = sim.applyAction.bind(sim);
   sim.applyAction = (state, action, options) => {
-    if (protectedCost(action, config)) throw new Error("protected door cost");
+    if (protectedCost(action, config, state)) throw new Error("protected door cost");
     const next = apply(state, action, options);
     if (!next) return next;
     assertProtected(state, next, config);
@@ -366,7 +406,7 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     maxActionsPerState: semantics.maxActionsPerState, stopOnFirstGoal: false, captureTrace: false,
     goalSkylineLimit: config.candidateLimit, dpSkylineMax: config.candidateLimit,
     preserveSkylineRoles: true,
-    actionFilter: (action) => !protectedCost(action, config),
+    actionFilter: (action, state) => !protectedCost(action, config, state),
     shouldStop: () => {
       notify();
       return fs.existsSync(path.join(dir, "STOP"));
@@ -418,7 +458,10 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
         // the node trace alone may omit those additional primitive decisions.
         actionEntries: [],
         options: { solver: "durable-canonical-dp", projectRoot: towerRoot, rank: null,
-          metadata: { initialContract: config.initial, zeroSpendItems: config.protectedItems, optimalityProven: false } } });
+          metadata: { initialContract: config.initial,
+            zeroSpendItems: (config.protectedItems || []).filter(id => config.protectedSpendLimits?.[id] == null),
+            ...(config.protectedSpendLimits ? { maxSpendItems: config.protectedSpendLimits } : {}),
+            optimalityProven: false } } });
       const terminalValue = config.scoreFlag
         ? (Number(candidate.flags[config.scoreFlag] || 0) - Number(start.flags[config.scoreFlag] || 0)) / config.scoreScale
         : candidate.hero.hp;
@@ -431,6 +474,6 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
   }
   return { candidates, stats, verified, bestProgressPreview };
 }
-module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, sha, readJson, atomicJson, problemFingerprint, resumeSearchFingerprint, searchSemantics, executionProvenance, identityOf, validateConfig, protectedCost,
+module.exports = { SCHEMA, SEARCH_PREVIEW_SCHEMA, GREEN_SPENT_FLAG, spentGreenKey, sha, readJson, atomicJson, problemFingerprint, resumeSearchFingerprint, searchSemantics, executionProvenance, identityOf, validateConfig, protectedCost,
   assertProtected, makeSimulator, initialState, matchesGoal, summary, checkpointId,
   newJournal, recoverJournal, pickTask, integrate, runAttempt, buildSearchPreview };

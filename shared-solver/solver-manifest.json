@@ -225,6 +225,7 @@
         "shared-solver/check-core-regressions.js",
         "shared-solver/check-continuation-slice-contract.js",
         "shared-solver/check-continuation-confluence-contract.js",
+        "shared-solver/check-green-key-budget.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
@@ -3425,6 +3426,13 @@
       "requiresStrictReplay": false,
       "cleanCheckout": true,
       "notes": "PR-5.6c admissible necessary-condition bounds, unknown-evidence keep semantics, and structured prune witness diagnostics"
+    },
+    "shared-solver/check-green-key-budget.js": {
+      "grade": "unit-plus-micro",
+      "allowsNotFound": false,
+      "requiresStrictReplay": true,
+      "cleanCheckout": true,
+      "notes": "PR-5.32k single-green-key cumulative-spend guard, two doors, expensive door, pickup, canonical key, strict replay and default-OFF parity on a tiny tower."
     },
     "shared-solver/check-guided-equal-score-service-order.js": {
       "grade": "local-regression",

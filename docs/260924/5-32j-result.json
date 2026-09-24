@@ -1,0 +1,38 @@
+{
+  "schema": "pr532j-search-cost-profile-v1",
+  "status": "VERIFIED",
+  "sourceCommit": "37a5368da550233886659f42b53ad6428d3f3961",
+  "measurements": {
+    "expansionsPerSecAt32k": {
+      "control532c": 98.4,
+      "control532d": 98.0,
+      "control532f": 100.5,
+      "control532h": 99.7,
+      "mean": 99.15
+    },
+    "memoryAt32k": {
+      "peakRssMb": 1520.3,
+      "peakHeapMb": 1329.2,
+      "frontierNodes": 44885,
+      "dpKeys": 29681
+    },
+    "cpuHotspotSamples": {
+      "totalSamples": 3706,
+      "structuredClone": 1447,
+      "structuredClonePct": 39.04,
+      "garbageCollection": 184,
+      "garbageCollectionPct": 4.96,
+      "stateAndTileAccess": 615,
+      "dpKeyAndBattleHash": 263
+    }
+  },
+  "scalingAnalysis": {
+    "linearDailyThroughputAt100Eps": 8640000,
+    "memoryConstraint": "At 32k expansions, frontier is ~45k nodes consuming ~1.5-2.2GB. Without state pruning or off-heap serialization, a multi-day run would exhaust the 6GB heap / 8GB RSS ceiling within a few hundred thousand expansions.",
+    "combinatorialExplosion": "Branching factor on TS13 is ~4-7 actions per state. 10x compute speedup increases search depth by only log(10)/log(4) ≈ 1.6 to 2.5 steps. Raw throughput cannot overcome unguided combinatorial breadth."
+  },
+  "rustEvaluation": {
+    "potentialGain": "Rust engine could eliminate structuredClone and GC, yielding estimated 4x-10x throughput for state simulation and key hashing.",
+    "risks": "H5mota tower logic relies on JavaScript event lists, floor script evaluations, dynamic flags and damage formulas. A full Rust rewrite risks semantic drift where routes fail strict replay in the real game. In addition, compute speedup does not solve search direction."
+  }
+}

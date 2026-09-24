@@ -483,6 +483,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": true,
     "notes": "PR-5.17a1 real D2 blocked evilHero repair, circular I1009 rejection, startable I1014 selection, first prerequisite strict replay, and empty-portfolio negative control"
   },
+  "shared-solver/check-green-key-budget.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": true,
+    "cleanCheckout": true,
+    "notes": "PR-5.32k single-green-key cumulative-spend guard, two doors, expensive door, pickup, canonical key, strict replay and default-OFF parity on a tiny tower."
+  },
   "shared-solver/check-durable-search.js": {
     "grade": "unit-plus-micro",
     "allowsNotFound": false,
@@ -1943,6 +1950,7 @@ const manifest = {
         "shared-solver/check-core-regressions.js",
         "shared-solver/check-continuation-slice-contract.js",
         "shared-solver/check-continuation-confluence-contract.js",
+        "shared-solver/check-green-key-budget.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",
