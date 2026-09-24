@@ -1,0 +1,77 @@
+{
+  "schema": "pr532m-result-v1",
+  "milestone": "PR-5.32m",
+  "status": "NOT_PROMOTED",
+  "verdict": "VALID_BOUNDED_MISS_SEARCH_INCOMPLETE",
+  "sourceCommit": "9967151f03a55e3d79cbeff1d084132e4c1a3b4c",
+  "sourceRemote": "origin/dev",
+  "bundle": {
+    "path": "~/motapath-solver/probes/pr532m-9967151-r2/",
+    "manifestSha256": "487c38fefa5ed3149b5bcc0501031caff4163808e86c9ab20cfd8b224d0d4008",
+    "boundFiles": 1729,
+    "preflightPass": true,
+    "priorBundleFilesRehashed": 1728,
+    "postRunDrift": 0,
+    "seedSha256": "5e49fce57cbdb14e6d696defbde092cb427b2f129fe6a933c31184c43855954c",
+    "seedOriginalInitialStrictReplay": { "pass": true, "decisions": 74, "cumulativeGreenKeySpent": 1 },
+    "production": {
+      "service": "inactive",
+      "journalSha256": "980db6a3acb618df8c3f20b3a138a8180165d89bd4dd6a585a76da642ccb8126",
+      "statusSha256": "c16e55b0982e71591b11c9f2b0e6a83b124086b09dcef3e18328780370185ebe",
+      "stopSha256": "7906b011b68c5996864906975aef4b300a9220e3d0f592a384029f1cd3056d0d",
+      "postRunHashesUnchanged": true
+    }
+  },
+  "search": {
+    "expansionLimit": 32000,
+    "expansions": 32000,
+    "wallLimitMs": 900000,
+    "wallMs": 893603,
+    "goalFound": false,
+    "budgetExhausted": true,
+    "searchComplete": false,
+    "outcomeClass": "goal-not-found-search-incomplete",
+    "frontierSize": 107917,
+    "actionTrimmed": 0,
+    "providerErrors": 0,
+    "observerErrors": 0,
+    "uniqueBattleTargets": 36,
+    "uniquePortalEntries": 5,
+    "peakHeapUsedMb": 3717.9,
+    "peakRssMb": 3933.7,
+    "expansionsByFloor": { "TS15": 31356, "TS14": 627, "TS13": 17 },
+    "marginalExpandedStateMaxima": { "hp": 143794, "atk": 63, "def": 4, "lv": 4 },
+    "greenKeyBudget": 1,
+    "actualBossRouteReplay": false
+  },
+  "diagnosis": {
+    "projectionRepair": "Pending removed-goal distance includes the final-floor declared entrance-to-Boss leg. Verified seed distance is 11; retreating to the TS14 stair remains distance 11 instead of incorrectly becoming 0.",
+    "combatGate": "The preserved bestSeen state has HP 180208 / ATK 53 / DEF 4; simulator predicts 449614 damage from the TS15 soldier Boss, so the attack is lethal and no Boss action is enumerated. The preserved deepest-expanded state has HP 24224 / ATK 53 / DEF 4 and the same lethal prediction. Raising only HP on a diagnostic clone makes the Boss action enumerable; this is synthetic gate diagnosis, not a route.",
+    "statSensitivity": [
+      { "atk": 53, "def": 4, "damage": 449614 },
+      { "atk": 60, "def": 4, "damage": 253055 },
+      { "atk": 63, "def": 4, "damage": 213037 },
+      { "atk": 65, "def": 4, "damage": 191851 },
+      { "atk": 68, "def": 4, "damage": 168311 },
+      { "atk": 70, "def": 4, "damage": 155364 },
+      { "atk": 80, "def": 4, "damage": 111815 }
+    ],
+    "statSensitivityIsSynthetic": true,
+    "interpretation": "The bounded run now allocates almost all expansions to TS15 and reaches combat-ready-looking but still insufficient representative states. This identifies the immediate observed blocker as Boss survivability / resource-state coverage, not the removed-goal projection. Incomplete search and marginal maxima do not prove no viable state or route exists."
+  },
+  "limitations": [
+    "No winning candidate was produced, so there is no original-initial Boss route to strict-replay or browser-replay.",
+    "The preserved best/deepest states are diagnostics, not a complete inventory of the frontier; search had 107917 pending states.",
+    "The Boss afterBattle event includes unloadEquip and insertion of the 清空状态 common event; the current simulator reports these action types unsupported. Goal plumbing was only synthetically checked; any future win still requires full terminal-event parity and real browser replay.",
+    "The 32k MISS is not frontier exhaustion and is not evidence of impossibility. No further search arm was launched."
+  ],
+  "artifacts": {
+    "cloudRun": "~/motapath-solver/probes/pr532m-9967151-r2/runs/boss-32k/",
+    "localEvidence": "shared-solver/routes/generated/260924-pr532m/r2-evidence/",
+    "localEvidenceArchiveSha256": "8a2dddccd9f5643f8930d7de8411f6fb369dbbdb3197e9f5e6b65b50355ad0fa",
+    "cloudReportSha256": "7681ab339e782521143f6f2a08269969c39d29952ce798372768329a49b9e08c",
+    "cloudStatusSha256": "7cab0f4cc5b7e6dd3ae94f20bb5f8c29bf5f4c099177148d6ef28ba0c04ab88f",
+    "bossGateDiagnostic": "shared-solver/routes/generated/260924-pr532m/boss-gate-diagnostic.json",
+    "bossGateDiagnosticSha256": "3004a68239a47f77361a72b0a33f2197a4317a559a00859dfcc554981997a456"
+  }
+}
