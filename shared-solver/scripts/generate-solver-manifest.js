@@ -483,6 +483,13 @@ const TEST_OVERRIDES = {
     "cleanCheckout": true,
     "notes": "PR-5.17a1 real D2 blocked evilHero repair, circular I1009 rejection, startable I1014 selection, first prerequisite strict replay, and empty-portfolio negative control"
   },
+  "shared-solver/check-removal-goal-distance.js": {
+    "grade": "unit-plus-micro",
+    "allowsNotFound": false,
+    "requiresStrictReplay": false,
+    "cleanCheckout": true,
+    "notes": "PR-5.32m explicit removal anchor for event-return terminal goals, missing next stair, completed/invalid targets and unchanged floor-only projection."
+  },
   "shared-solver/check-directional-movement.js": {
     "grade": "unit-plus-micro",
     "allowsNotFound": false,
@@ -1959,6 +1966,7 @@ const manifest = {
         "shared-solver/check-continuation-confluence-contract.js",
         "shared-solver/check-green-key-budget.js",
         "shared-solver/check-directional-movement.js",
+        "shared-solver/check-removal-goal-distance.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
         "shared-solver/check-discovery-capability-audit.js",

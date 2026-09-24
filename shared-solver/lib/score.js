@@ -40,7 +40,21 @@ function estimateNextFloorDistance(state, project) {
 function estimateGoalRelativeDistance(state, project, stageGoal) {
   if (!project || !project.floorsById || !project.floorsById[state.floorId]) return Number.POSITIVE_INFINITY;
   const currentFloorId = state.floorId;
-  const goalFloorId = stageGoal && stageGoal.floorId;
+  const removal = stageGoal && stageGoal.removed;
+  const removalFloor = removal && project.floorsById[removal.floorId];
+  const pendingRemoval = removalFloor
+    && Number.isInteger(removal.x) && Number.isInteger(removal.y)
+    && removal.x >= 0 && removal.y >= 0
+    && removal.x < removalFloor.width && removal.y < removalFloor.height
+    && !(state.floorStates && state.floorStates[removal.floorId]
+      && state.floorStates[removal.floorId].removed
+      && state.floorStates[removal.floorId].removed[`${removal.x},${removal.y}`]);
+  // A removal goal can itself trigger the terminal floor change. Its pending
+  // coordinate, not a nonexistent next-floor stair, is the explicit target.
+  if (pendingRemoval && currentFloorId === removal.floorId) {
+    return Math.abs(state.hero.loc.x - removal.x) + Math.abs(state.hero.loc.y - removal.y);
+  }
+  const goalFloorId = pendingRemoval ? removal.floorId : stageGoal && stageGoal.floorId;
   if (!goalFloorId || currentFloorId === goalFloorId) {
     return estimateNextFloorDistance(state, project);
   }

@@ -348,6 +348,7 @@
     "check:durable-search": "node check-durable-search.js",
     "check:green-key-budget": "node check-green-key-budget.js",
     "check:directional-movement": "node check-directional-movement.js",
+    "check:removal-goal-distance": "node check-removal-goal-distance.js",
     "check:search-semantics-identity": "node check-search-semantics-identity.js",
     "check:dependency-branch-portfolio": "node check-dependency-branch-portfolio.js"
   },
