@@ -57,13 +57,33 @@
       { "atk": 80, "def": 4, "damage": 111815 }
     ],
     "statSensitivityIsSynthetic": true,
-    "interpretation": "The bounded run now allocates almost all expansions to TS15 and reaches combat-ready-looking but still insufficient representative states. This identifies the immediate observed blocker as Boss survivability / resource-state coverage, not the removed-goal projection. Incomplete search and marginal maxima do not prove no viable state or route exists."
+    "interpretation": "At the time of the 32k run closeout, preserved representatives were lethal to the Boss. This was representative-only evidence: incomplete search and marginal maxima did not prove no viable state or route existed.",
+    "postRunResourceBranch": {
+      "provenance": "Post-run local continuation from the saved bestSeen state; legal actions applied after search completion; not search output or search input.",
+      "bestSeenPrefixDecisions": 91,
+      "actions": [
+        "battle:skeletonPresbyter@TS15:9,10",
+        "battle:blackKing@TS15:11,8",
+        "battle:redGateKeeper@TS15:11,6",
+        "battle:yellowGateKeeper@TS15:11,4",
+        "battle:redWizard@TS15:8,1",
+        "battle:yellowGateKeeper@TS15:10,2"
+      ],
+      "originalInitialStrictReplay": { "pass": true, "decisions": 97, "cumulativeGreenKeySpent": 1 },
+      "finalState": { "hp": 185688, "atk": 70, "def": 4, "lv": 4, "exp": 26 },
+      "boss": { "legalBattleActionVariants": 4, "predictedDamage": 155364, "remainingHpMargin": 30324, "actionApplied": false, "browserReplay": false },
+      "searchCutoff": { "expansions": 32000, "deepestExpandedDecisionDepth": 94, "frontier": 107917 },
+      "artifact": "shared-solver/routes/generated/260924-pr532m/resource-branch-audit.json",
+      "artifactSha256": "898803eb1abdfae9140536dcd1b94249beb867c624c63444322cbe9dbc392da1",
+      "interpretation": "This provides one internally strict-replayable, one-green-key simulator state with survivable Boss combat, at decision depth 97—three decisions deeper than the deepest expanded state in the bounded run. It explains the observed miss as coverage stopping before this resource sequence was fully expanded to the depth-97 combat-ready state, but is not an autonomous search result, Boss victory, browser verification, or impossibility/guaranteed-larger-budget claim."
+    }
   },
   "limitations": [
     "No winning candidate was produced, so there is no original-initial Boss route to strict-replay or browser-replay.",
     "The preserved best/deepest states are diagnostics, not a complete inventory of the frontier; search had 107917 pending states.",
     "The Boss afterBattle event includes unloadEquip and insertion of the 清空状态 common event; the current simulator reports these action types unsupported. Goal plumbing was only synthetically checked; any future win still requires full terminal-event parity and real browser replay.",
-    "The 32k MISS is not frontier exhaustion and is not evidence of impossibility. No further search arm was launched."
+    "The 32k MISS is not frontier exhaustion and is not evidence of impossibility. No further search arm was launched.",
+    "The post-run 97-decision resource branch is diagnostic-only; it was not discovered autonomously, fed into search, followed by a Boss action, or browser-replayed."
   ],
   "artifacts": {
     "cloudRun": "~/motapath-solver/probes/pr532m-9967151-r2/runs/boss-32k/",
@@ -72,6 +92,8 @@
     "cloudReportSha256": "7681ab339e782521143f6f2a08269969c39d29952ce798372768329a49b9e08c",
     "cloudStatusSha256": "7cab0f4cc5b7e6dd3ae94f20bb5f8c29bf5f4c099177148d6ef28ba0c04ab88f",
     "bossGateDiagnostic": "shared-solver/routes/generated/260924-pr532m/boss-gate-diagnostic.json",
-    "bossGateDiagnosticSha256": "3004a68239a47f77361a72b0a33f2197a4317a559a00859dfcc554981997a456"
+    "bossGateDiagnosticSha256": "3004a68239a47f77361a72b0a33f2197a4317a559a00859dfcc554981997a456",
+    "postRunResourceBranchAudit": "shared-solver/routes/generated/260924-pr532m/resource-branch-audit.json",
+    "postRunResourceBranchAuditSha256": "898803eb1abdfae9140536dcd1b94249beb867c624c63444322cbe9dbc392da1"
   }
 }

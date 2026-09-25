@@ -69,6 +69,7 @@ function searchSemantics(config) {
     fairnessEvery: Math.max(1, Math.floor(Number(cfg.fairnessEvery) || 32)),
     fairOrderMode: cfg.fairOrderMode || "fifo",
     maxActionsPerState: Math.max(1, Math.floor(Number(cfg.maxActionsPerState) || 4096)),
+    ...(cfg.includeFloorFly === true ? { includeFloorFly: true } : {}),
     ...(cfg.protectedSpendLimits ? { protectedSpendLimits: cfg.protectedSpendLimits } : {}),
     // Reserved for PR-5.32a; fingerprinted now so enabling it later invalidates
     // resume of runs made without it.
@@ -395,6 +396,7 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
     dpAgendaMode: semantics.dpAgendaMode,
     fairnessEvery: semantics.fairnessEvery,
     fairOrderMode: semantics.fairOrderMode,
+    includeFloorFly: semantics.includeFloorFly === true,
     // PR-5.32a: pass the continuation slice through from the SAME canonical
     // extractor that feeds resumeSearchFingerprint — fingerprint == execution.
     continuationSlice: semantics.continuationSlice.enabled

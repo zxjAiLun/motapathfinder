@@ -209,8 +209,11 @@ function findTilePositionById(project, state, floorId, tileId) {
 }
 
 function hasEnemyLeft(project, state, enemyId) {
-  return Object.keys(project.floorsById || {}).some((floorId) => {
+  const currentFloorId = (state && state.floorId) || null;
+  const floorsToCheck = currentFloorId ? [currentFloorId] : Object.keys(project.floorsById || {});
+  return floorsToCheck.some((floorId) => {
     const floor = project.floorsById[floorId];
+    if (!floor) return false;
     for (let y = 0; y < floor.height; y += 1) {
       for (let x = 0; x < floor.width; x += 1) {
         const tile = getTileDefinitionAt(project, state, floorId, x, y);
@@ -836,33 +839,37 @@ class StaticSimulator {
 
   enumerateFloorFlyActions(state, reachability) {
     const scan = reachability || this.getWalkReachability(state);
-    const actions = [];
-    const flyTargets = new Set();
+    const actionsByTarget = new Map();
     const hasFlyBlocker = hasEnemyLeft(this.project, state, "E1649");
     this.withReachabilityConsumer("floorFly", () => Object.values(scan.visited || {}).forEach((node) => {
       const lookupState = typeof scan.getLookupState === "function" ? scan.getLookupState(node) : node.state;
       Object.keys(lookupState.visitedFloors || {}).forEach((targetFloorId) => {
+        if (targetFloorId === lookupState.floorId) return;
         if (!canUseFloorFly(this.project, lookupState, targetFloorId, { hasFlyBlocker })) return;
+        const pathLen = Array.isArray(node.path) ? node.path.length : 0;
+        const existing = actionsByTarget.get(targetFloorId);
+        if (existing && existing.pathLength <= pathLen) return;
         const target = resolveFloorFlyTarget(this.project, lookupState, targetFloorId);
-        const key = `${lookupState.floorId}:${node.x},${node.y}->${targetFloorId}:${target.x},${target.y}`;
-        if (flyTargets.has(key)) return;
-        flyTargets.add(key);
         const nodeState = typeof scan.materializeNodeState === "function"
           ? scan.materializeNodeState(node)
           : node.state;
-        actions.push({
-          kind: "floorFly",
-          tool: "fly",
-          floorId: nodeState.floorId,
-          targetFloorId,
-          target,
-          stance: { x: node.x, y: node.y },
-          path: Array.isArray(node.path) ? node.path.slice() : [],
-          travelState: nodeState,
-          summary: `floorFly:${targetFloorId}@${nodeState.floorId}:${node.x},${node.y}`,
+        actionsByTarget.set(targetFloorId, {
+          pathLength: pathLen,
+          action: {
+            kind: "floorFly",
+            tool: "fly",
+            floorId: nodeState.floorId,
+            targetFloorId,
+            target,
+            stance: { x: node.x, y: node.y },
+            path: Array.isArray(node.path) ? node.path.slice() : [],
+            travelState: nodeState,
+            summary: `floorFly:${targetFloorId}@${nodeState.floorId}:${node.x},${node.y}`,
+          },
         });
       });
     }));
+    const actions = Array.from(actionsByTarget.values()).map((entry) => entry.action);
     return this.recordReachabilityActions("floorFly", actions);
   }
 

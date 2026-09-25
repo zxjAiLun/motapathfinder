@@ -3121,6 +3121,12 @@ function searchDPCore(simulator, initialRoots, options) {
         actions = typeof config.actionProvider === "function"
           ? config.actionProvider(simulator, state, entry)
           : simulator.enumeratePrimitiveActions(state).actions;
+        if (config.includeFloorFly === true && typeof simulator.enumerateFloorFlyActions === "function" && typeof config.actionProvider !== "function") {
+          const flyActions = simulator.enumerateFloorFlyActions(state);
+          if (Array.isArray(flyActions) && flyActions.length > 0) {
+            actions = actions.concat(flyActions);
+          }
+        }
       } catch (error) {
         perfTracker.endTopLevelPhase("primitiveEnumeration");
         invalid += 1;
@@ -3139,6 +3145,14 @@ function searchDPCore(simulator, initialRoots, options) {
           : (perfActive
               ? trackPerfPhase("enumerateActions", () => simulator.enumeratePrimitiveActions(state)).actions
               : simulator.enumeratePrimitiveActions(state).actions);
+        if (config.includeFloorFly === true && typeof simulator.enumerateFloorFlyActions === "function" && typeof config.actionProvider !== "function") {
+          const flyActions = perfActive
+            ? trackPerfPhase("enumerateFloorFly", () => simulator.enumerateFloorFlyActions(state))
+            : simulator.enumerateFloorFlyActions(state);
+          if (Array.isArray(flyActions) && flyActions.length > 0) {
+            actions = actions.concat(flyActions);
+          }
+        }
       } catch (error) {
         invalid += 1;
         if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {

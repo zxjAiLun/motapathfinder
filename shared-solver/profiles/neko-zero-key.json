@@ -1,12 +1,16 @@
 {
-  "title": "纳可物语 · 血洛缘起 · 零绿钥匙",
+  "title": "纳可物语 · 血洛缘起 · 单绿钥匙",
   "initial": {
     "floorId": "TS11",
     "hero": { "hp": 100, "atk": 1, "def": 0, "mdef": 0, "lv": 1, "exp": 0, "money": 0, "loc": { "x": 6, "y": 1, "direction": "down" } },
-    "inventory": { "greenKey": 30 },
+    "inventory": { "greenKey": 30, "fly": 1, "book": 1, "I600": 1 },
     "flags": { "saltygreen": 2, "jc19f5": 1, "allhp": 0, "nowatk": 1, "nowdef": 0, "nowmdef": 0, "nowexp": 0, "nowlevel": 1 }
   },
   "protectedItems": ["greenKey"],
+  "protectedSpendLimits": {
+    "greenKey": 1
+  },
+  "includeFloorFly": true,
   "allowedFloors": ["TS11", "TS12", "TS13", "TS14", "TS15", "JC19"],
   "stages": [
     { "label": "1 → 2 层", "floorId": "TS12" },
@@ -23,6 +27,14 @@
   ],
   "candidateLimit": 16,
   "dpPriorityMode": "goal-relative",
+  "dpAgendaMode": "hybrid-fair",
+  "fairnessEvery": 4,
+  "fairOrderMode": "fifo",
+  "continuationSlice": {
+    "enabled": true,
+    "budget": 32,
+    "localPriorityMode": "inherit"
+  },
   "heapMb": 6144,
   "maxRssMb": 8192,
   "maxRuntimeMs": 0,
