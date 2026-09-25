@@ -9,11 +9,17 @@ const { searchDP } = require("./lib/dp-search");
 
 console.log("Running check-floor-fly-contract...");
 
-const projectDir = fs.readdirSync(path.resolve(__dirname, "../neko591")).find((n) =>
-  fs.existsSync(path.resolve(__dirname, "../neko591", n, "project/floors/TS11.js"))
-);
-assert.ok(projectDir, "neko591 project directory found");
-const project = loadProject(path.resolve(__dirname, "../neko591", projectDir));
+let projectPath = null;
+if (fs.existsSync(path.resolve(__dirname, "../tower/project/floors/TS11.js"))) {
+  projectPath = path.resolve(__dirname, "../tower");
+} else if (fs.existsSync(path.resolve(__dirname, "../neko591"))) {
+  const projectDir = fs.readdirSync(path.resolve(__dirname, "../neko591")).find((n) =>
+    fs.existsSync(path.resolve(__dirname, "../neko591", n, "project/floors/TS11.js"))
+  );
+  if (projectDir) projectPath = path.resolve(__dirname, "../neko591", projectDir);
+}
+assert.ok(projectPath, "tower project directory found with TS11");
+const project = loadProject(projectPath);
 
 const config = {
   allowedFloors: ["TS11", "TS12", "TS13", "TS14", "TS15"],
