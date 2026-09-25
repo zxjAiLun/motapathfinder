@@ -34,6 +34,7 @@ function checkTruthTable() {
       goalFound: true,
       frontierExhausted: false,
       budgetExhausted: true,
+      modelErrorsEncountered: false,
       searchComplete: false,
       outcomeClass: "goal-found-search-incomplete",
     },
@@ -44,6 +45,7 @@ function checkTruthTable() {
       goalFound: true,
       frontierExhausted: true,
       budgetExhausted: false,
+      modelErrorsEncountered: false,
       searchComplete: true,
       outcomeClass: "goal-found-search-complete",
     },
@@ -54,6 +56,7 @@ function checkTruthTable() {
       goalFound: false,
       frontierExhausted: true,
       budgetExhausted: false,
+      modelErrorsEncountered: false,
       searchComplete: true,
       outcomeClass: "goal-not-found-search-complete",
     },
@@ -68,8 +71,34 @@ function checkTruthTable() {
       goalFound: false,
       frontierExhausted: false,
       budgetExhausted: true,
+      modelErrorsEncountered: false,
       searchComplete: false,
       outcomeClass: "goal-not-found-search-incomplete",
+    },
+  );
+  // Model-fidelity regression (PR-5.33a): a frontier that empties while real
+  // transitions were dropped as unrepresentable must NOT read as complete, and
+  // the reason must stay visible in the class.
+  assertOutcome(
+    { goalFound: false, frontierSize: 0, modelErrors: 2 },
+    {
+      goalFound: false,
+      frontierExhausted: true,
+      budgetExhausted: false,
+      modelErrorsEncountered: true,
+      searchComplete: false,
+      outcomeClass: "goal-not-found-search-incomplete-model-errors",
+    },
+  );
+  assertOutcome(
+    { goalFound: true, frontierSize: 0, modelErrors: 1 },
+    {
+      goalFound: true,
+      frontierExhausted: true,
+      budgetExhausted: false,
+      modelErrorsEncountered: true,
+      searchComplete: false,
+      outcomeClass: "goal-found-search-incomplete-model-errors",
     },
   );
   assert.strictEqual(buildSearchOutcome({
@@ -109,6 +138,7 @@ function checkAggregationAndDoctor() {
     goalFound: true,
     frontierExhausted: false,
     budgetExhausted: true,
+    modelErrorsEncountered: false,
     searchComplete: false,
     outcomeClass: "goal-found-search-incomplete",
   });
@@ -173,11 +203,13 @@ function main() {
         "goalFound",
         "frontierExhausted",
         "budgetExhausted",
+        "modelErrorsEncountered",
         "searchComplete",
       ],
       goalFoundIncompleteIsFailure: false,
       doctorStatus: "feasible-incomplete",
       searchBehaviorChanged: false,
+      completenessNarrowed: "model-errors",
     },
   }, null, 2)}\n`);
 }

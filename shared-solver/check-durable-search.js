@@ -245,7 +245,47 @@ async function main() {
     assert.notEqual(workerDriftRun.status, 0, "worker must fail-closed on identity drift");
     assert(workerDriftRun.stderr.includes("WORKER_IDENTITY_DRIFT"), "error must mention WORKER_IDENTITY_DRIFT");
 
-    console.log("PASS durable-search: real DP + strict replay; input isolation; zero-spend guards; journal resume/identity; single writer; bounded MISS; render-only progress-preview; worker-drift-guard; read-only HTTP/security");
+    // 8. PR-5.33a operational-deadline vs identity: shortening the remaining
+    // wall-clock time is OPERATIONAL and must NOT change the fingerprinted
+    // identity or trip WORKER_IDENTITY_DRIFT. Pre-fix the coordinator shrank
+    // budgets[tier].runtimeMs inside the fingerprinted config while sending the
+    // original identity, so a short total limit produced 0 attempts + drift.
+    const deadlineDir = path.join(temp, "operational-deadline");
+    const deadlineState = d.initialState(dummyProject, d.makeSimulator(dummyProject, config), config);
+    d.atomicJson(path.join(deadlineDir, "initial.json"), deadlineState);
+    d.atomicJson(path.join(deadlineDir, "states/deadline.json"), deadlineState);
+    const deadlineTask = { id: "deadline", stage: 0, tier: 0 };
+    const deadlineIdentity = d.identityOf(config, path.dirname(project));
+
+    // The operational deadline is not part of the config, so identity is stable
+    // whether or not a deadline is imposed.
+    assert.equal(d.identityOf(config, path.dirname(project)), deadlineIdentity,
+      "operational deadline must not change the fingerprinted identity");
+
+    // Direct runAttempt under a finite shortened deadline returns a result and
+    // never throws WORKER_IDENTITY_DRIFT / config drift.
+    const shortAttempt = d.runAttempt(config, path.dirname(project), deadlineDir, deadlineTask, () => {}, { runtimeDeadlineMs: 25 });
+    assert.ok(shortAttempt && shortAttempt.stats, "short-deadline attempt must return stats");
+
+    // Coordinator-style worker spec: config is UNSHRUNK and the deadline travels
+    // in a separate field. The worker recomputes identity from the unshrunk
+    // config and must match, so it runs to completion.
+    const deadlineSpecPath = path.join(deadlineDir, "short-deadline-task.json");
+    d.atomicJson(deadlineSpecPath, {
+      config,
+      towerRoot: path.dirname(project),
+      dir: deadlineDir,
+      task: deadlineTask,
+      output: path.join(deadlineDir, "deadline-out.json"),
+      expectedExecutionIdentity: deadlineIdentity,
+      runtimeDeadlineMs: 25,
+    });
+    const shortDeadlineRun = spawnSync(process.execPath, [path.join(__dirname, "run-durable-search.js"), `--worker=${deadlineSpecPath}`], { encoding: "utf8" });
+    assert.equal(shortDeadlineRun.status, 0, `worker must run under a shortened operational deadline: ${shortDeadlineRun.stderr}`);
+    assert(!/WORKER_IDENTITY_DRIFT/.test(shortDeadlineRun.stderr || ""), "shortened operational deadline must NOT trip identity drift");
+    assert.ok(fs.existsSync(path.join(deadlineDir, "deadline-out.json")), "worker must produce a result under a shortened deadline");
+
+    console.log("PASS durable-search: real DP + strict replay; input isolation; zero-spend guards; journal resume/identity; single writer; bounded MISS; render-only progress-preview; worker-drift-guard; operational-deadline-identity-stable; read-only HTTP/security");
   } finally {
     if (server) await new Promise((resolve) => server.close(resolve));
     fs.rmSync(temp, { recursive: true, force: true });

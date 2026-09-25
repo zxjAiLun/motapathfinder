@@ -1,17 +1,22 @@
 "use strict";
 
 /**
- * OnlyUp floorFly dedup safety audit.
+ * OnlyUp floorFly departure-distinctness regression (real tower).
  *
  * Scans real floorFly actions from the OnlyUp project, groups by targetFloorId,
- * applies each to the same state, and compares postState keys.
+ * applies each to the same base state, and compares postState keys.
  *
- * If all floorFly actions going to the same target floor produce
- * identical postState (buildStateKey + buildDpStateKey + hero.loc +
- * floorStates + flags + inventory), then portalDedupMode=target-floor
- * is safe for this tower.
+ * Contract (PR-5.33a): the solver MUST NOT collapse floorFly actions by target
+ * floor alone. Different departure tiles reach the same target floor but land on
+ * different return positions and carry different travel states, so at least one
+ * target must expose >1 distinct-departure action, and divergent postState keys
+ * among them are the REQUIRED evidence that target-floor dedup would drop legal
+ * routes. This audit therefore exits 0 when that divergence is present (dedup
+ * correctly absent) and exits 1 only if the enumerator collapsed departures or
+ * produced no comparable multi-departure group.
  */
 
+const assert = require("node:assert");
 const path = require("node:path");
 
 const { loadProject } = require("./lib/project-loader");
@@ -173,22 +178,28 @@ function main() {
 
   console.log("=".repeat(60));
   console.log("RESULT:");
-  console.log(`  Safe groups (identical postState keys): ${safeGroups}`);
-  console.log(`  Unsafe groups (differing postState keys): ${unsafeGroups}`);
+  console.log(`  Groups with identical postState keys: ${safeGroups}`);
+  console.log(`  Groups with divergent postState keys (distinct departures): ${unsafeGroups}`);
 
-  if (unsafeGroups > 0) {
-    console.log("\n  UNSAFE DETAILS:");
-    unsafeDetails.forEach((d) => {
-      console.log(`    ${d.targetFloor}: ${d.left} vs ${d.right}`);
-      console.log(`      diff: ${JSON.stringify(d.diff)}`);
-    });
-    console.log("\n  → target-floor dedup is NOT universally safe for this tower.");
-    console.log("  → Only enable portalDedupMode=target-floor after manual verification.");
-    process.exitCode = 1;
-  } else {
-    console.log("\n  → All floorFly actions to the same target floor produce identical postState keys.");
-    console.log("  → portalDedupMode=target-floor is safe for this tower.");
-  }
+  const multiActionGroups = Array.from(byFloor.values()).filter((actions) => actions.length > 1).length;
+  assert(
+    multiActionGroups > 0,
+    "floorFly enumeration must expose >1 distinct-departure action for at least one target floor; " +
+      "a single action per target means departures were collapsed (target-floor dedup regression)",
+  );
+  assert(
+    unsafeGroups > 0,
+    "at least one target floor must show divergent postState keys across distinct departures; " +
+      "this is the required evidence that target-floor dedup would drop legal routes",
+  );
+
+  console.log("\n  DIVERGENT DEPARTURES (required evidence — dedup correctly absent):");
+  unsafeDetails.forEach((d) => {
+    console.log(`    ${d.targetFloor}: ${d.left} vs ${d.right}`);
+    console.log(`      diff: ${JSON.stringify(d.diff)}`);
+  });
+  console.log("\n  → Distinct departures to the same target floor produce distinct states.");
+  console.log("  → The solver correctly preserves them instead of deduping by target floor.");
 }
 
 main();

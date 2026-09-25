@@ -45,7 +45,7 @@ async function main(argv = process.argv.slice(2)) {
       }
       const result = d.runAttempt(spec.config, spec.towerRoot, spec.dir, spec.task, (value) => {
         if (process.connected) process.send(value);
-      });
+      }, { runtimeDeadlineMs: spec.runtimeDeadlineMs });
       d.atomicJson(spec.output, result);
     } finally { releaseWorker(); }
     return;
@@ -123,12 +123,25 @@ async function main(argv = process.argv.slice(2)) {
       task.status = "running";
       telemetry = null;
       save();
-      const remainingMs = maxRuntime === Infinity ? Infinity : maxRuntime - journal.elapsedMs;
-      const workerConfig = JSON.parse(JSON.stringify(config));
-      if (maxRuntime !== Infinity) {
-        workerConfig.budgets[task.tier].runtimeMs = Math.min(workerConfig.budgets[task.tier].runtimeMs, remainingMs);
-      }
-      d.atomicJson(specPath, { config: workerConfig, towerRoot, dir, task, output, expectedExecutionIdentity: identity });
+      const remainingMs = maxRuntime === Infinity ? Infinity : Math.max(0, maxRuntime - journal.elapsedMs);
+      // The per-attempt wall-clock deadline is OPERATIONAL, not semantic: it can
+      // only cut an attempt short, never change which nodes are explored or their
+      // values. It therefore must NOT enter the fingerprinted config/identity --
+      // otherwise shrinking the remaining time trips WORKER_IDENTITY_DRIFT. Pass
+      // it as a separate spec field and keep the fingerprinted config stable.
+      const budgetRuntimeMs = config.budgets[task.tier].runtimeMs;
+      const effectiveRuntimeMs = maxRuntime === Infinity
+        ? budgetRuntimeMs
+        : Math.min(budgetRuntimeMs, remainingMs);
+      d.atomicJson(specPath, {
+        config,
+        towerRoot,
+        dir,
+        task,
+        output,
+        expectedExecutionIdentity: identity,
+        runtimeDeadlineMs: maxRuntime === Infinity ? null : remainingMs,
+      });
       try {
         if (!fs.existsSync(output)) await new Promise((resolve, reject) => {
           const log = fs.openSync(path.join(dir, "worker.log"), "a");
@@ -136,7 +149,7 @@ async function main(argv = process.argv.slice(2)) {
             execArgv: [`--max-old-space-size=${config.heapMb}`], stdio: ["ignore", log, log, "ipc"],
           });
           fs.closeSync(log);
-          const deadline = setTimeout(() => child.kill("SIGKILL"), workerConfig.budgets[task.tier].runtimeMs + 120000);
+          const deadline = setTimeout(() => child.kill("SIGKILL"), effectiveRuntimeMs + 120000);
           child.on("message", (message) => { telemetry = message; publish(); });
           child.once("error", (error) => { clearTimeout(deadline); reject(error); });
           child.once("exit", (code, signal) => {

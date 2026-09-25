@@ -3,7 +3,7 @@
 const { getProgress, compareProgress } = require("./progress");
 const { estimateGoalRelativeDistance, estimateNextFloorDistance, getFloorOrder } = require("./score");
 const { cloneState, getDecisionDepth, getRawRouteLength, listFloorMutationSummary } = require("./state");
-const { buildStateKey } = require("./state-key");
+const { buildStateKey, stableTriggeredAutoEvents } = require("./state-key");
 const {
   SOLVER_HERO_FIELDS,
   getSolverModel,
@@ -100,6 +100,11 @@ function buildDpStateKey(simulator, state, options) {
     mutations: listFloorMutationSummary(state.floorStates || {}),
   };
   if (solverModel.explicit) baseKey.solverModel = solverModel.fingerprint;
+  // One-shot auto-event history is part of DP identity too (see state-key.js).
+  // Appended after solverModel and only when non-empty, so existing keys for
+  // auto-event-free states remain byte-identical.
+  const triggeredAutoEvents = stableTriggeredAutoEvents(state);
+  if (triggeredAutoEvents) baseKey.triggeredAutoEvents = triggeredAutoEvents;
   return JSON.stringify(baseKey);
 }
 
@@ -1463,6 +1468,13 @@ function searchDPCore(simulator, initialRoots, options) {
   let statesWithActionTrim = 0;
   let maxActionsGeneratedForState = 0;
   let invalid = 0;
+  // Model-fidelity errors are transitions the solver could not enumerate or
+  // apply (provider threw, or applyAction/executeAction threw — e.g. an
+  // unsupported event effect). They are tracked separately from benign
+  // "invalid" skips so the search outcome can never claim exhaustive coverage
+  // while real transitions were dropped because they are unrepresentable.
+  let providerErrors = 0;
+  let applyErrors = 0;
   let goalFeasibilityPruned = 0;
   const goalFeasibilityPrunedByReason = {};
   const goalFeasibilitySamples = [];
@@ -3114,22 +3126,25 @@ function searchDPCore(simulator, initialRoots, options) {
       }
     }
     let actions = [];
+    const enumerateActions = () => {
+      if (typeof config.actionProvider === "function") return config.actionProvider(simulator, state, entry);
+      const primitive = perfActive && !profileExpansion
+        ? trackPerfPhase("enumerateActions", () => simulator.enumeratePrimitiveActions(state))
+        : simulator.enumeratePrimitiveActions(state);
+      if (config.includeFloorFly !== true || typeof simulator.enumerateFloorFlyActions !== "function") return primitive.actions;
+      const fly = () => simulator.enumerateFloorFlyActions(state, primitive.reachability);
+      const flyActions = perfActive && !profileExpansion ? trackPerfPhase("enumerateFloorFly", fly) : fly();
+      return primitive.actions.concat(Array.isArray(flyActions) ? flyActions : []);
+    };
     if (profileExpansion) {
       perfTracker.increment("primitiveEnumerationCalls");
       perfTracker.beginTopLevelPhase("primitiveEnumeration");
       try {
-        actions = typeof config.actionProvider === "function"
-          ? config.actionProvider(simulator, state, entry)
-          : simulator.enumeratePrimitiveActions(state).actions;
-        if (config.includeFloorFly === true && typeof simulator.enumerateFloorFlyActions === "function" && typeof config.actionProvider !== "function") {
-          const flyActions = simulator.enumerateFloorFlyActions(state);
-          if (Array.isArray(flyActions) && flyActions.length > 0) {
-            actions = actions.concat(flyActions);
-          }
-        }
+        actions = enumerateActions();
       } catch (error) {
         perfTracker.endTopLevelPhase("primitiveEnumeration");
         invalid += 1;
+        providerErrors += 1;
         if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {
           reasonCode: "action-provider-error",
           error: { name: error && error.name || "Error", message: error && error.message || String(error) },
@@ -3140,21 +3155,10 @@ function searchDPCore(simulator, initialRoots, options) {
       perfTracker.endTopLevelPhase("primitiveEnumeration");
     } else {
       try {
-        actions = typeof config.actionProvider === "function"
-          ? config.actionProvider(simulator, state, entry)
-          : (perfActive
-              ? trackPerfPhase("enumerateActions", () => simulator.enumeratePrimitiveActions(state)).actions
-              : simulator.enumeratePrimitiveActions(state).actions);
-        if (config.includeFloorFly === true && typeof simulator.enumerateFloorFlyActions === "function" && typeof config.actionProvider !== "function") {
-          const flyActions = perfActive
-            ? trackPerfPhase("enumerateFloorFly", () => simulator.enumerateFloorFlyActions(state))
-            : simulator.enumerateFloorFlyActions(state);
-          if (Array.isArray(flyActions) && flyActions.length > 0) {
-            actions = actions.concat(flyActions);
-          }
-        }
+        actions = enumerateActions();
       } catch (error) {
         invalid += 1;
+        providerErrors += 1;
         if (observer) observer.emit("actionProviderError", () => observerStatePayload(simulator, state, entry, config, {
           reasonCode: "action-provider-error",
           error: { name: error && error.name || "Error", message: error && error.message || String(error) },
@@ -3232,6 +3236,7 @@ function searchDPCore(simulator, initialRoots, options) {
           } catch (error) {
             perfTracker.endTopLevelPhase("applyAction");
             invalid += 1;
+            applyErrors += 1;
             recordAction(actionStats, action, "invalid");
             if (observer) observer.emit("candidateRejected", () => observerStatePayload(simulator, state, entry, config, {
               reasonCode: "action-apply-error",
@@ -3253,6 +3258,7 @@ function searchDPCore(simulator, initialRoots, options) {
             nextStates = Array.isArray(result) ? result : [result];
           } catch (error) {
             invalid += 1;
+            applyErrors += 1;
             recordAction(actionStats, action, "invalid");
             if (observer) observer.emit("candidateRejected", () => observerStatePayload(simulator, state, entry, config, {
               reasonCode: "action-apply-error",
@@ -3516,6 +3522,7 @@ function searchDPCore(simulator, initialRoots, options) {
     cancelled: stoppedReason === "cancel-requested",
     actionTrimmed,
     stopOnFirstGoal,
+    modelErrors: providerErrors + applyErrors,
   });
 
   return {
@@ -3548,6 +3555,9 @@ function searchDPCore(simulator, initialRoots, options) {
     expansions,
     frontierSize,
     stoppedReason,
+    modelErrors: providerErrors + applyErrors,
+    providerErrors,
+    applyErrors,
     cancelled: stoppedReason === "cancel-requested",
     searchOutcome,
     checkpointPool: checkpointPool || createCheckpointPool(config.checkpointOptions),
@@ -3562,6 +3572,11 @@ function searchDPCore(simulator, initialRoots, options) {
         "dp-same-hp-not-shorter": sameHpRejected,
         "goal-necessary-condition-failed": goalFeasibilityPruned,
         invalid,
+      },
+      modelErrors: {
+        total: providerErrors + applyErrors,
+        providerErrors,
+        applyErrors,
       },
       retention: {
         nodesSize: nodes.size,

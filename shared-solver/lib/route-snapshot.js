@@ -125,6 +125,13 @@ function buildSolverSnapshot(project, state, options) {
     flags: normalizeFlags(state.flags),
     floors,
   };
+  // One-shot auto-event history is part of state identity, so a snapshot used to
+  // resume/replay must carry it. Persisted only when non-empty to keep byte
+  // identical snapshots for towers/states without auto-event history.
+  const triggered = state.triggeredAutoEvents && typeof state.triggeredAutoEvents === "object"
+    ? Object.keys(state.triggeredAutoEvents).filter((key) => state.triggeredAutoEvents[key]).sort()
+    : [];
+  if (triggered.length > 0) snapshot.triggeredAutoEvents = triggered;
   if (explicitModel) snapshot.partial = true;
   return snapshot;
 }

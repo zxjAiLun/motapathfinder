@@ -1,97 +1,123 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const path = require("node:path");
-const fs = require("node:fs");
-const { loadProject } = require("./lib/project-loader");
 const { StaticSimulator } = require("./lib/simulator");
-const { searchDP } = require("./lib/dp-search");
+const { searchDP, buildDpStateKey } = require("./lib/dp-search");
+const { cloneState } = require("./lib/state");
+const { buildStateKey } = require("./lib/state-key");
+const { buildRouteRecord } = require("./lib/route-store");
+const { createPerfTracker, getActivePerfTracker, setActivePerfTracker } = require("./lib/perf");
 
-console.log("Running check-floor-fly-contract...");
-
-let projectPath = null;
-if (fs.existsSync(path.resolve(__dirname, "../tower/project/floors/TS11.js"))) {
-  projectPath = path.resolve(__dirname, "../tower");
-} else if (fs.existsSync(path.resolve(__dirname, "../neko591"))) {
-  const projectDir = fs.readdirSync(path.resolve(__dirname, "../neko591")).find((n) =>
-    fs.existsSync(path.resolve(__dirname, "../neko591", n, "project/floors/TS11.js"))
-  );
-  if (projectDir) projectPath = path.resolve(__dirname, "../neko591", projectDir);
-}
-assert.ok(projectPath, "tower project directory found with TS11");
-const project = loadProject(projectPath);
-
-const config = {
-  allowedFloors: ["TS11", "TS12", "TS13", "TS14", "TS15"],
-  protectedItems: ["greenKey"],
-  protectedSpendLimits: { greenKey: 1 },
-  includeFloorFly: true,
-};
-
-const sim = new StaticSimulator(project, config);
-
-// Test 1: Verify canUseFloorFly is NOT globally blocked by E1649 on K15
-const testState = {
-  floorId: "TS15",
-  hero: { hp: 1000, atk: 10, def: 0, lv: 1, exp: 0, loc: { x: 6, y: 0, direction: "up" }, equipment: [] },
-  inventory: { greenKey: 30, fly: 1 },
-  flags: { __leaveLoc__: { TS11: { x: 6, y: 12, direction: "down" }, TS14: { x: 6, y: 0, direction: "up" } } },
-  visitedFloors: { TS11: true, TS14: true, TS15: true },
-  floorStates: {},
-};
-
-const flyActions = sim.enumerateFloorFlyActions(testState);
-console.log("Emitted fly action summaries:", flyActions.map((a) => a.summary));
-assert.ok(flyActions.length > 0, "Floor fly actions must be generated when hero has fly: 1");
-assert.ok(flyActions.some((a) => a.targetFloorId === "TS11"), "Must include fly to TS11");
-assert.ok(flyActions.some((a) => a.targetFloorId === "TS14"), "Must include fly to TS14");
-assert.ok(!flyActions.some((a) => a.targetFloorId === "TS15"), "Must not fly to current floor");
-
-// Deduplication check: at most one action per target floor
-const targetCounts = flyActions.reduce((acc, a) => {
-  acc[a.targetFloorId] = (acc[a.targetFloorId] || 0) + 1;
-  return acc;
-}, {});
-for (const [targetFloor, count] of Object.entries(targetCounts)) {
-  assert.equal(count, 1, `Target floor ${targetFloor} must have exactly 1 deduplicated fly action`);
+function makeContext(closePassage = false) {
+  const floor = (id) => ({
+    floorId: id, title: id, width: 3, height: 1, map: [[0, 0, 0]],
+    events: {}, autoEvent: {}, firstArrive: [], eachArrive: [], changeFloor: {},
+    canFlyFrom: true, canFlyTo: true, flyPoint: [0, 0],
+  });
+  const a = floor("A"), b = floor("B"), remote = floor("Remote");
+  remote.map[0][1] = 2;
+  if (closePassage) {
+    a.autoEvent = { "1,0": { "0": {
+      condition: "flag:got == 1", multiExecute: false,
+      data: [{ type: "setBlock", number: "wall", loc: [1, 0] }],
+    } } };
+    b.eachArrive = [{ type: "setValue", name: "flag:got", value: "1" }];
+  }
+  const project = {
+    root: __dirname,
+    data: { firstData: { floorId: "A", hero: {
+      hp: 100, atk: 1, def: 0, lv: 1, exp: 0, loc: { x: 0, y: 0, direction: "right" },
+    }, levelUp: [] } },
+    floorsById: { A: a, B: b, Remote: remote }, floorOrder: ["A", "B", "Remote"],
+    mapTilesByNumber: {
+      1: { id: "wall", cls: "terrains", noPass: true },
+      2: { id: "E1649", cls: "enemys", noPass: true },
+    },
+    mapNumbersById: { wall: 1, E1649: 2 }, itemsById: {}, enemysById: {}, icons: {},
+    defaultFlags: { flyRecordPosition: true }, values: {},
+  };
+  const sim = new StaticSimulator(project, {
+    autoPickupEnabled: false, autoBattleEnabled: false, walkReachabilityMode: "safe-fast",
+  });
+  const state = sim.createInitialState();
+  state.inventory.fly = 1;
+  state.visitedFloors = { A: true, B: true };
+  return { project, sim, state };
 }
 
-// Test 2: Hero without fly tool cannot fly
-const noFlyState = structuredClone(testState);
-noFlyState.inventory.fly = 0;
-const noFlyActions = sim.enumerateFloorFlyActions(noFlyState);
-assert.equal(noFlyActions.length, 0, "Hero without fly item must generate 0 fly actions");
+function checkDeparturesAndGuards() {
+  const { sim, state } = makeContext();
+  const actions = sim.enumerateFloorFlyActions(state);
+  const left = actions.find((a) => a.stance.x === 0);
+  const right = actions.find((a) => a.stance.x === 2);
+  assert.ok(left && right, "different departure positions must survive target-floor deduplication");
+  assert.ok(actions.every((a) => a.targetFloorId === "B"), "no self/unvisited-floor flights");
+  const leftPost = sim.applyAction(state, left, { storeRoute: false });
+  const rightPost = sim.applyAction(state, right, { storeRoute: false });
+  assert.notEqual(buildStateKey(leftPost), buildStateKey(rightPost));
+  assert.notEqual(buildDpStateKey(sim, leftPost), buildDpStateKey(sim, rightPost));
+  assert.equal(sim.applyFloorFlyAction(cloneState(leftPost), { targetFloorId: "A" }).hero.loc.x, 0);
+  assert.equal(sim.applyFloorFlyAction(cloneState(rightPost), { targetFloorId: "A" }).hero.loc.x, 2);
 
-// Test 3: applyFloorFlyAction transitions hero correctly
-const flyTo11Action = flyActions.find((a) => a.targetFloorId === "TS11");
-const stateAfterFly = sim.applyFloorFlyAction(structuredClone(testState), flyTo11Action);
-assert.equal(stateAfterFly.floorId, "TS11", "Floor must be TS11 after flying");
-assert.equal(stateAfterFly.hero.loc.x, 6, "Hero x must match TS11 leaveLoc");
-assert.equal(stateAfterFly.hero.loc.y, 12, "Hero y must match TS11 leaveLoc");
-assert.ok(stateAfterFly.flags.__leaveLoc__.TS15, "TS15 leave location must be recorded upon flight");
+  const noFly = cloneState(state);
+  delete noFly.inventory.fly;
+  assert.deepEqual(sim.enumerateFloorFlyActions(noFly), []);
+  const unvisited = cloneState(state);
+  delete unvisited.visitedFloors.B;
+  assert.deepEqual(sim.enumerateFloorFlyActions(unvisited), []);
+  const blocked = makeContext();
+  blocked.project.floorsById.A.map[0][1] = 2;
+  assert.deepEqual(blocked.sim.enumerateFloorFlyActions(blocked.state), [], "current-floor blocker matters");
+  const noLanding = makeContext();
+  noLanding.project.floorsById.B.canFlyTo = false;
+  assert.deepEqual(noLanding.sim.enumerateFloorFlyActions(noLanding.state), []);
+  const noDeparture = makeContext();
+  noDeparture.project.floorsById.A.canFlyFrom = false;
+  assert.deepEqual(noDeparture.sim.enumerateFloorFlyActions(noDeparture.state), []);
+}
 
-// Test 4: dp-search integration with includeFloorFly: true
-const dpResult = searchDP(sim, testState, {
-  includeFloorFly: true,
-  maxExpansions: 20,
-  maxRuntimeMs: 5000,
-  goalPredicate: (s) => s.floorId === "TS11",
-  stopOnFirstGoal: true,
-});
-console.log("dp-search with includeFloorFly result:", {
-  foundGoal: dpResult.foundGoal,
-  expansions: dpResult.expansions,
-});
-assert.ok(dpResult.foundGoal, "dp-search with includeFloorFly must reach TS11 goal via floorFly");
+function checkClosingPassageRoute() {
+  const { project, sim, state } = makeContext(true);
+  const options = {
+    includeFloorFly: true, maxExpansions: 100, maxRuntimeMs: 3000,
+    stopOnFirstGoal: true,
+    goalPredicate: (s) => s.floorId === "A" && s.hero.loc.x === 2 && s.flags.got === 1,
+  };
+  const result = searchDP(sim, state, options);
+  assert.ok(result.foundGoal, "depart from the right room, visit B, then fly back behind the closed passage");
+  assert.equal(result.bestGoalState.route.length, 2);
+  const record = buildRouteRecord({ project, simulator: sim, initialState: state, finalState: result.bestGoalState });
+  assert.equal(record.decisions.length, 2, "route must pass the actual strict replay builder");
+  assert.equal(record.final.exactStateKey, buildStateKey(result.bestGoalState));
+  const off = searchDP(sim, state, { ...options, includeFloorFly: false });
+  assert.equal(off.foundGoal, false);
+}
 
-// Test 5: dp-search with includeFloorFly: false does not reach TS11 within 20 expansions
-const dpResultOff = searchDP(sim, testState, {
-  includeFloorFly: false,
-  maxExpansions: 20,
-  maxRuntimeMs: 5000,
-  goalPredicate: (s) => s.floorId === "TS11",
-  stopOnFirstGoal: true,
-});
-assert.ok(!dpResultOff.foundGoal, "dp-search with includeFloorFly:false cannot reach TS11 via flight");
+function checkReachabilityReuse() {
+  for (const profile of [null, "timing", "expansion"]) {
+    const { sim, state } = makeContext();
+    let scans = 0;
+    const walk = sim.getWalkReachability.bind(sim);
+    sim.getWalkReachability = (s) => { scans += 1; return walk(s); };
+    const previous = getActivePerfTracker();
+    try {
+      setActivePerfTracker(profile ? createPerfTracker({ enabled: true, profileExpansionCost: profile === "expansion" }) : null);
+      const result = searchDP(sim, state, {
+        includeFloorFly: true, maxExpansions: 1, stopOnFirstGoal: false, goalPredicate: () => false,
+      });
+      assert.equal(result.expansions, 1);
+      assert.equal(scans, 1, `${profile || "off"}: primitive and fly enumeration must share one scan`);
+    } finally { setActivePerfTracker(previous); }
+  }
+  const { sim, state } = makeContext();
+  let flyCalls = 0;
+  const fly = sim.enumerateFloorFlyActions.bind(sim);
+  sim.enumerateFloorFlyActions = (...args) => { flyCalls += 1; return fly(...args); };
+  searchDP(sim, state, { includeFloorFly: true, actionProvider: () => [], goalPredicate: () => false });
+  assert.equal(flyCalls, 0, "custom providers own their action scope");
+}
 
-console.log("check-floor-fly-contract: ALL PASS");
+checkDeparturesAndGuards();
+checkClosingPassageRoute();
+checkReachabilityReuse();
+console.log("PASS floor-fly: departure-state preservation, legal two-flight strict replay, tool/visited/blocker guards, shared scan with profiler OFF/ON");

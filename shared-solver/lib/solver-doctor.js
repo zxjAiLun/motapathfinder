@@ -164,6 +164,14 @@ function sumAttemptMetric(attempts, name) {
   );
 }
 
+function sumModelErrors(attempts) {
+  return attempts.reduce((sum, attempt) => {
+    const raw = attemptDp(attempt).modelErrors;
+    const value = raw && typeof raw === "object" ? raw.total : raw;
+    return sum + number(value);
+  }, 0);
+}
+
 function maxAttemptMetric(attempts, name) {
   return attempts.reduce(
     (max, attempt) => Math.max(max, number(attemptDp(attempt)[name])),
@@ -281,7 +289,10 @@ function buildDoctorLine(report) {
   if (!report || report.status === "solved") return "Doctor: solved.";
   if (report.status === "feasible-incomplete") {
     const outcome = report.searchOutcome || {};
-    return `Doctor: goal found; search incomplete (frontierExhausted=${Boolean(outcome.frontierExhausted)}, budgetExhausted=${Boolean(outcome.budgetExhausted)}). The recorded route is feasible; the remaining frontier was not exhaustively classified.`;
+    const modelErrorsNote = number((report.evidence || {}).modelErrors) > 0
+      ? ` ${number(report.evidence.modelErrors)} transition(s) could not be modeled and were dropped, so the frontier is not exhaustively classified.`
+      : "";
+    return `Doctor: goal found; search incomplete (frontierExhausted=${Boolean(outcome.frontierExhausted)}, budgetExhausted=${Boolean(outcome.budgetExhausted)}). The recorded route is feasible; the remaining frontier was not exhaustively classified.${modelErrorsNote}`;
   }
   const evidenceParts = [];
   const evidence = report.evidence || {};
@@ -289,6 +300,8 @@ function buildDoctorLine(report) {
     evidenceParts.push(`stoppedReason=${evidence.stoppedReasons.join(",")}`);
   if (evidence.actionTrimmed > 0)
     evidenceParts.push(`actionTrimmed=${evidence.actionTrimmed}`);
+  if (evidence.modelErrors > 0)
+    evidenceParts.push(`modelErrors=${evidence.modelErrors}`);
   if (evidence.expansionBudgetExhaustedAttempts > 0)
     evidenceParts.push(
       `expansionBudgetExhausted=${evidence.expansionBudgetExhaustedAttempts}`,
@@ -318,7 +331,10 @@ function buildDoctorLine(report) {
   const deficitText = report.deficitDetail
     ? ` Deficit: ${report.deficitDetail}.`
     : "";
-  return `Doctor: ${report.failedSegmentId || "unknown segment"} failed as ${report.failureClass || "unknown"}; likely ${report.likelyCause}. ${report.recommendation}.${evidenceText}${deficitText}`;
+  const modelErrorsText = number((report.evidence || {}).modelErrors) > 0
+    ? ` Note: ${number(report.evidence.modelErrors)} transition(s) could not be modeled and were dropped; this is NOT exhaustive no-route evidence.`
+    : "";
+  return `Doctor: ${report.failedSegmentId || "unknown segment"} failed as ${report.failureClass || "unknown"}; likely ${report.likelyCause}. ${report.recommendation}.${evidenceText}${deficitText}${modelErrorsText}`;
 }
 
 function buildSolverDoctorReport(result) {
@@ -341,6 +357,7 @@ function buildSolverDoctorReport(result) {
         expansionBudgetExhaustedAttempts:
           expansionBudgetExhaustedCount(attempts),
         frontierSizeMax: maxAttemptMetric(attempts, "frontierSize"),
+        modelErrors: sumModelErrors(attempts),
       }),
     };
     report.line = buildDoctorLine(report);
@@ -383,6 +400,7 @@ function buildSolverDoctorReport(result) {
     attempts: attempts.length,
     stoppedReasons: stoppedReasons(attempts),
     actionTrimmed: sumAttemptMetric(attempts, "actionTrimmed"),
+    modelErrors: sumModelErrors(attempts),
     expansionBudgetExhaustedAttempts: expansionBudgetExhaustedCount(attempts),
     frontierSizeMax: maxAttemptMetric(attempts, "frontierSize"),
     rejectedByHigherHp: sumAttemptMetric(attempts, "rejectedByHigherHp"),

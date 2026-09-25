@@ -15,15 +15,19 @@ function number(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function outcomeClass({ goalFound, searchComplete }) {
-  if (goalFound) {
-    return searchComplete
+function outcomeClass({ goalFound, searchComplete, modelErrorsEncountered }) {
+  const base = goalFound
+    ? (searchComplete
       ? "goal-found-search-complete"
-      : "goal-found-search-incomplete";
-  }
-  return searchComplete
-    ? "goal-not-found-search-complete"
-    : "goal-not-found-search-incomplete";
+      : "goal-found-search-incomplete")
+    : (searchComplete
+      ? "goal-not-found-search-complete"
+      : "goal-not-found-search-incomplete");
+  // A search that dropped real transitions because they could not be modeled
+  // must never read as plain "complete"; the distinct suffix keeps the reason
+  // visible to the doctor, handoff, and any downstream not-found interpretation.
+  if (!searchComplete && modelErrorsEncountered) return `${base}-model-errors`;
+  return base;
 }
 
 function buildSearchOutcome(input) {
@@ -38,17 +42,20 @@ function buildSearchOutcome(input) {
     BUDGET_STOP_REASONS.has(stoppedReason);
   const cancelled = fields.cancelled === true || stoppedReason === "cancel-requested";
   const actionScopeComplete = number(fields.actionTrimmed) === 0;
+  const modelErrorsEncountered = number(fields.modelErrors) > 0;
   const stoppedEarlyForGoal = fields.stopOnFirstGoal === true && goalFound;
   const searchComplete = frontierExhausted &&
     !budgetExhausted &&
     !cancelled &&
     !stoppedReason &&
     actionScopeComplete &&
+    !modelErrorsEncountered &&
     !stoppedEarlyForGoal;
   const outcome = {
     goalFound,
     frontierExhausted,
     budgetExhausted,
+    modelErrorsEncountered,
     searchComplete,
   };
   return {
@@ -61,6 +68,9 @@ function outcomeFromAttempt(attempt) {
   const diagnostics = (attempt && attempt.diagnostics) || {};
   const dp = diagnostics.dp || diagnostics;
   if (dp.searchOutcome) return { ...dp.searchOutcome };
+  const dpModelErrors = dp.modelErrors && typeof dp.modelErrors === "object"
+    ? dp.modelErrors.total
+    : dp.modelErrors;
   return buildSearchOutcome({
     goalFound: attempt && attempt.found === true,
     frontierSize: dp.frontierSize,
@@ -70,6 +80,7 @@ function outcomeFromAttempt(attempt) {
     actionTrimmed: diagnostics.actionTrimmed == null
       ? dp.actionTrimmed
       : diagnostics.actionTrimmed,
+    modelErrors: dpModelErrors,
     stopOnFirstGoal: dp.stopOnFirstGoal,
   });
 }
@@ -94,6 +105,7 @@ function buildResultSearchOutcome(result) {
         outcomeClass: outcomeClass({
           goalFound: found,
           searchComplete: explicit.searchComplete === true,
+          modelErrorsEncountered: explicit.modelErrorsEncountered === true,
         }),
       };
     }
@@ -104,6 +116,7 @@ function buildResultSearchOutcome(result) {
       stoppedReason: result && result.stoppedReason,
       cancelled: result && result.cancelled,
       actionTrimmed: result && result.actionTrimmed,
+      modelErrors: result && result.modelErrors,
       stopOnFirstGoal: result && result.stopOnFirstGoal,
     });
   }
@@ -112,6 +125,7 @@ function buildResultSearchOutcome(result) {
     goalFound: found,
     frontierExhausted: outcomes.every((outcome) => outcome.frontierExhausted),
     budgetExhausted: outcomes.some((outcome) => outcome.budgetExhausted),
+    modelErrorsEncountered: outcomes.some((outcome) => outcome.modelErrorsEncountered === true),
     searchComplete: outcomes.every((outcome) => outcome.searchComplete),
   };
   return {

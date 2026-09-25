@@ -370,12 +370,18 @@ function integrate(journal, task, result, config, dir) {
     journal.state = "verified_route";
   }
 }
-function runAttempt(config, towerRoot, dir, task, report = () => {}) {
+function runAttempt(config, towerRoot, dir, task, report = () => {}, options = {}) {
   const project = loadProject(towerRoot);
   const sim = makeSimulator(project, config);
   const start = readJson(path.join(dir, "initial.json"));
   const state = readJson(path.join(dir, "states", `${task.id}.json`));
   const budget = config.budgets[task.tier];
+  // Operational wall-clock deadline from the coordinator. Never part of the
+  // fingerprinted config/identity; only shortens this attempt.
+  const runtimeDeadlineMs = options.runtimeDeadlineMs;
+  const effectiveRuntimeMs = runtimeDeadlineMs == null
+    ? budget.runtimeMs
+    : Math.min(budget.runtimeMs, Math.max(0, Number(runtimeDeadlineMs)));
   let lastReport = 0;
   const providerErrors = [];
   let telemetry = { expansions: 0, frontierSize: 0, floorId: state.floorId };
@@ -403,7 +409,7 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
       ? { ...semantics.continuationSlice }
       : undefined,
     stageGoal,
-    maxExpansions: budget.expansions, maxRuntimeMs: budget.runtimeMs,
+    maxExpansions: budget.expansions, maxRuntimeMs: effectiveRuntimeMs,
     maxRssMb: config.maxRssMb, maxHeapMb: Math.floor(config.heapMb * 0.85),
     maxActionsPerState: semantics.maxActionsPerState, stopOnFirstGoal: false, captureTrace: false,
     goalSkylineLimit: config.candidateLimit, dpSkylineMax: config.candidateLimit,
@@ -426,6 +432,7 @@ function runAttempt(config, towerRoot, dir, task, report = () => {}) {
   const stats = { expansions: result.expansions, frontierSize: result.frontierSize,
     stoppedReason: result.stoppedReason || (result.frontierSize ? "expansion-limit" : "frontier-drained"),
     searchComplete: outcome.searchComplete === true, foundGoal: result.foundGoal,
+    modelErrors: result.modelErrors || 0, modelErrorsEncountered: outcome.modelErrorsEncountered === true,
     candidateCount: candidates.length, actionTrimmed: result.diagnostics.trimmed,
     archiveTrimmed: Boolean(result.diagnostics.dp.goalArchiveTrimmed), diagnostics: result.diagnostics };
 

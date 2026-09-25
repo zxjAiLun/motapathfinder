@@ -50,7 +50,7 @@ function setValueTarget(project, state, name, operator, expression, extra) {
     state.flags[flagName] = applyOperator(state.flags[flagName], operator, value);
     return;
   }
-  state.notes.push(`Unsupported setValue target: ${name}`);
+  throw new UnsupportedEventError({ type: "setValue" }, `unsupported target ${name}`);
 }
 
 function normalizeLocationList(project, state, loc, extra) {
@@ -87,11 +87,48 @@ const NOOP_EVENT_TYPES = new Set([
   "comment",
   "sleep",
   "wait",
+  // Arbitrary scripts are treated as presentation no-ops. A `function` body that
+  // mutates game state is a KNOWN, DOCUMENTED limitation (we do not interpret
+  // arbitrary JavaScript); it is not silently reclassified as a supported state
+  // change. Keeping this consistent with event-resolver's classifier is what
+  // lets enumeration and execution agree on the same supported surface.
   "function",
 ]);
 
+const STATE_CHANGING_EVENT_TYPES = new Set([
+  "setValue",
+  "openDoor",
+  "hide",
+  "setBlock",
+  "changeFloor",
+  "win",
+]);
+
+const SUPPORTED_EVENT_TYPES = new Set([
+  ...NOOP_EVENT_TYPES,
+  ...STATE_CHANGING_EVENT_TYPES,
+  "if",
+  "choices",
+]);
+
+class UnsupportedEventError extends Error {
+  constructor(action, detail) {
+    super(`Unsupported event action type: ${action && action.type || "unknown"}${detail ? ` (${detail})` : ""}`);
+    this.name = "UnsupportedEventError";
+    this.code = "UNSUPPORTED_EVENT_ACTION";
+    this.eventType = action && action.type || null;
+  }
+}
+
+function isSupportedEventType(type) {
+  return SUPPORTED_EVENT_TYPES.has(type);
+}
+
 function executeAction(project, state, action, extra, options) {
-  if (action == null || typeof action !== "object") return;
+  if (action == null || typeof action === "string") return;
+  if (typeof action !== "object" || !isSupportedEventType(action.type)) {
+    throw new UnsupportedEventError(action);
+  }
 
   if (NOOP_EVENT_TYPES.has(action.type)) return;
 
@@ -128,8 +165,7 @@ function executeAction(project, state, action, extra, options) {
         ? Number(action.number)
         : project.mapNumbersById[action.number];
       if (number == null) {
-        state.notes.push(`Unsupported setBlock number: ${action.number}`);
-        return;
+        throw new UnsupportedEventError(action, `unknown block ${action.number}`);
       }
       points.forEach((point) => replaceTileAt(state, state.floorId, point.x, point.y, number));
       return;
@@ -149,7 +185,7 @@ function executeAction(project, state, action, extra, options) {
       state.notes.push(`Win event recorded but not used as solver terminal: ${action.reason || ""}`);
       return;
     default:
-      state.notes.push(`Unsupported event action type: ${action.type}`);
+      throw new UnsupportedEventError(action);
   }
 }
 
@@ -197,8 +233,7 @@ function runAutoEvents(project, state, options) {
   while (true) {
     guard += 1;
     if (guard > 64) {
-      state.notes.push(`Auto event loop hit safety limit on floor ${state.floorId}`);
-      break;
+      throw new UnsupportedEventError({ type: "autoEvent" }, `loop limit on floor ${state.floorId}`);
     }
 
     const eligible = [];
@@ -228,6 +263,11 @@ function runAutoEvents(project, state, options) {
 }
 
 module.exports = {
+  NOOP_EVENT_TYPES,
+  SUPPORTED_EVENT_TYPES,
+  STATE_CHANGING_EVENT_TYPES,
+  UnsupportedEventError,
+  isSupportedEventType,
   applyFloorArrival,
   executeActionList,
   runAutoEvents,

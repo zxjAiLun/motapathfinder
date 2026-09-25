@@ -14,6 +14,7 @@
     "watch:mt3:progress": "npm run verify:mt3:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
     "watch:mt5:progress": "npm run verify:mt5:progress:live -- --headless=0 --step-delay-ms=500 --keep-open=1 --start-delay-ms=3000",
     "check:core": "node check-core-regressions.js",
+    "check:floor-fly": "node check-floor-fly-contract.js",
     "check:counterfactual-repair": "node check-counterfactual-repair.js",
     "check:isolated-batch": "node check-isolated-batch-equivalence.js",
     "check:dp:hot-path": "node --expose-gc check-dp-hot-path.js",

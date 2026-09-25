@@ -1,40 +1,8 @@
 "use strict";
 
-const { executeActionList } = require("./events");
+const { executeActionList, NOOP_EVENT_TYPES, SUPPORTED_EVENT_TYPES, STATE_CHANGING_EVENT_TYPES } = require("./events");
 const { evaluateCondition } = require("./expression");
 const { coordinateKey } = require("./reachability");
-
-const NOOP_EVENT_TYPES = new Set([
-  "showStatusBar",
-  "hideStatusBar",
-  "setText",
-  "text",
-  "comment",
-  "sleep",
-  "wait",
-  "function",
-]);
-
-const SUPPORTED_EVENT_TYPES = new Set([
-  ...NOOP_EVENT_TYPES,
-  "setValue",
-  "openDoor",
-  "if",
-  "choices",
-  "hide",
-  "setBlock",
-  "changeFloor",
-  "win",
-]);
-
-const STATE_CHANGING_EVENT_TYPES = new Set([
-  "setValue",
-  "openDoor",
-  "hide",
-  "setBlock",
-  "changeFloor",
-  "win",
-]);
 
 function asActionList(value) {
   if (value == null) return [];

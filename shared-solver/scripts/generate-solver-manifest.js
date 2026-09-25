@@ -350,6 +350,34 @@ for (const file of listSolverLibFiles(libDir)) {
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-floor-fly-contract.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: false,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.33a synthetic departure-state counterexample, two-flight strict replay, tool/visited/current-floor blocker controls and shared reachability with profiling OFF/ON; no local tower dependency",
+  },
+  "shared-solver/check-unsupported-event-fidelity.js": {
+    grade: "unit",
+    allowsNotFound: true,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.33a synthetic contract: executeActionList throws UnsupportedEventError on unmodeled state effects (unloadEquip/insert/unfollow) while presentation no-ops and supported state changes still work; searchDP counts provider/apply errors as modelErrors so an exhausted frontier with dropped transitions classifies as *-model-errors, never search-complete; doctor warns it is not exhaustive no-route evidence",
+  },
+  "shared-solver/check-state-identity-auto-events.js": {
+    grade: "unit",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: true,
+    notes: "PR-5.33a synthetic contract: one-shot auto-event history is part of exact/DP/dominance identity (empty history stays byte-identical for back-compat), a search that would collapse two histories still finds the winning branch, and a route snapshot round-trips the fired-event set so replay does not re-fire consumed auto-events",
+  },
+  "shared-solver/check-onlyup-floorfly-dedup-safety.js": {
+    grade: "local-regression",
+    allowsNotFound: false,
+    requiresStrictReplay: false,
+    cleanCheckout: false,
+    notes: "PR-5.33a real-tower departure-distinctness regression: floorFly enumeration must expose >1 distinct-departure action per target and at least one divergent postState group, proving target-floor dedup is absent; needs the local OnlyUp project",
+  },
   "shared-solver/check-strategic-d2-search.js": {
     "grade": "integration-local",
     "allowsNotFound": true,
@@ -1966,6 +1994,7 @@ const manifest = {
         "shared-solver/check-continuation-confluence-contract.js",
         "shared-solver/check-green-key-budget.js",
         "shared-solver/check-directional-movement.js",
+        "shared-solver/check-floor-fly-contract.js",
         "shared-solver/check-removal-goal-distance.js",
         "shared-solver/check-resource-timing-model.js",
         "shared-solver/check-auto-milestone-decomposition.js",
@@ -1977,6 +2006,8 @@ const manifest = {
         "shared-solver/check-teacher-divergence.js",
         "shared-solver/check-manifest-runner.js",
         "shared-solver/check-dp-observer.js",
+        "shared-solver/check-unsupported-event-fidelity.js",
+        "shared-solver/check-state-identity-auto-events.js",
         "shared-solver/check-objective-safe-archive.js",
         "shared-solver/check-solve-task-contract.js",
         "shared-solver/check-solve-task-v2-contract.js",

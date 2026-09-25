@@ -838,38 +838,35 @@ class StaticSimulator {
   }
 
   enumerateFloorFlyActions(state, reachability) {
+    if (getInventoryCount(state, "fly") <= 0) return [];
     const scan = reachability || this.getWalkReachability(state);
-    const actionsByTarget = new Map();
-    const hasFlyBlocker = hasEnemyLeft(this.project, state, "E1649");
+    const actions = [];
     this.withReachabilityConsumer("floorFly", () => Object.values(scan.visited || {}).forEach((node) => {
       const lookupState = typeof scan.getLookupState === "function" ? scan.getLookupState(node) : node.state;
+      const hasFlyBlocker = hasEnemyLeft(this.project, lookupState, "E1649");
       Object.keys(lookupState.visitedFloors || {}).forEach((targetFloorId) => {
         if (targetFloorId === lookupState.floorId) return;
         if (!canUseFloorFly(this.project, lookupState, targetFloorId, { hasFlyBlocker })) return;
-        const pathLen = Array.isArray(node.path) ? node.path.length : 0;
-        const existing = actionsByTarget.get(targetFloorId);
-        if (existing && existing.pathLength <= pathLen) return;
         const target = resolveFloorFlyTarget(this.project, lookupState, targetFloorId);
         const nodeState = typeof scan.materializeNodeState === "function"
           ? scan.materializeNodeState(node)
           : node.state;
-        actionsByTarget.set(targetFloorId, {
-          pathLength: pathLen,
-          action: {
-            kind: "floorFly",
-            tool: "fly",
-            floorId: nodeState.floorId,
-            targetFloorId,
-            target,
-            stance: { x: node.x, y: node.y },
-            path: Array.isArray(node.path) ? node.path.slice() : [],
-            travelState: nodeState,
-            summary: `floorFly:${targetFloorId}@${nodeState.floorId}:${node.x},${node.y}`,
-          },
+        // Walk reachability owns its path equivalence. Different departures
+        // change __leaveLoc__ (and may have travel effects), so sharing a
+        // destination floor is NOT sufficient to discard a legal flight.
+        actions.push({
+          kind: "floorFly",
+          tool: "fly",
+          floorId: nodeState.floorId,
+          targetFloorId,
+          target,
+          stance: { x: node.x, y: node.y },
+          path: Array.isArray(node.path) ? node.path.slice() : [],
+          travelState: nodeState,
+          summary: `floorFly:${targetFloorId}@${nodeState.floorId}:${node.x},${node.y}`,
         });
       });
     }));
-    const actions = Array.from(actionsByTarget.values()).map((entry) => entry.action);
     return this.recordReachabilityActions("floorFly", actions);
   }
 
@@ -953,7 +950,9 @@ class StaticSimulator {
     }));
     actions.push(...this.recordReachabilityActions("battle", battleActions));
 
-    return { actions, battleActions };
+    // Invocation-local only: callers adding mobility actions can reuse this
+    // scan without a second BFS or a long-lived state cache.
+    return { actions, battleActions, reachability };
   }
 
   enumerateMacroActions(state, primitiveActions, battleActions) {

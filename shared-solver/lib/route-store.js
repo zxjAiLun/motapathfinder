@@ -319,7 +319,15 @@ function createStateFromSnapshot(project, snapshot, options) {
     return visited;
   }, {});
   state.visitedFloors[state.floorId] = true;
-  state.triggeredAutoEvents = {};
+  // Restore one-shot auto-event history so a resumed/replayed state does not
+  // re-fire auto-events that already fired in the original prefix. Absent in
+  // legacy snapshots (empty history) -> stays an empty map.
+  state.triggeredAutoEvents = Array.isArray(snapshot.triggeredAutoEvents)
+    ? snapshot.triggeredAutoEvents.reduce((result, key) => {
+      result[key] = true;
+      return result;
+    }, {})
+    : {};
   state.route = Array.isArray(config.route) ? config.route.slice() : [];
   state.notes = Array.isArray(config.notes) ? config.notes.slice() : [];
   state.meta = {

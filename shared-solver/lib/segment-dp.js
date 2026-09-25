@@ -1051,8 +1051,8 @@ function buildSegmentActionProvider(simulator, segment) {
         "event",
       ],
     );
-    const primitive = simulator.enumeratePrimitiveActions(state).actions || [];
-    let actions = primitive;
+    const primitive = simulator.enumeratePrimitiveActions(state);
+    let actions = primitive.actions || [];
     if (
       allowedKinds.has("interactPickup") &&
       typeof simulator.enumerateInteractPickupActions === "function"
@@ -1063,7 +1063,7 @@ function buildSegmentActionProvider(simulator, segment) {
       allowedKinds.has("floorFly") &&
       typeof simulator.enumerateFloorFlyActions === "function"
     ) {
-      actions = actions.concat(simulator.enumerateFloorFlyActions(state));
+      actions = actions.concat(simulator.enumerateFloorFlyActions(state, primitive.reachability));
     }
     const filtered = trimFloorFlyActions(actions, policy)
       .filter((action) => isAllowedAction(action, state, segment, simulator))
