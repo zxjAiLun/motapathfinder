@@ -4,7 +4,7 @@
 
 ## 状态与前置门
 
-当前为部署准备，尚未向 server1 发布或启动搜索。必须先取得冻结代码提交的 GitHub 完整 qualification；fast-only 或 skipped 不算通过。下方为已授权边界，不是已执行记录。
+实现 `eec63b85a90690bd2093112f0c2755c4ddf22e3f` 已发布到 Git，但[完整 qualification 36713333562](https://github.com/zxjAiLun/motapathfinder/actions/runs/36713333562)失败（24成功/17失败/1汇总跳过）。**server1 尚未上传发布包或启动搜索，部署门保持关闭。** 必须先取得冻结代码提交的完整资格通过；fast-only 或 skipped 不算通过。下方为已授权边界，不是已执行记录。
 
 **cloud1 已有其他业务，禁止连接、读取、修改或部署。** 本说明取代旧 cloud1 运维命令在本轮的使用。
 
@@ -20,3 +20,7 @@
 ## 验证与证据（待执行后追加）
 
 需要记录实际 commit、bundle/文件清单 SHA256、配置 SHA256、cgroup 实际值、独立端口、HTTP 只读限制、worker 结果及 doctor 原始字段。结束时搜索应已停止；只读 UI 可保留。搜索 MISS/资源失败不得写成无解或自主通关。
+
+## 2026-09-30 只读复检
+
+Node22.22.2；1967MiB总RAM、约952MiB available；8.9GiB磁盘可用；cgroup v2具备memory/cpu控制器；用户Linger=yes。`~/motapath-solver-pr533b` 不存在，未列出motapath用户unit。8787占用，8791/18787未监听（发布时仍需再次检查）。本轮没有上传文件、创建unit、占用端口、启动搜索或改动其他服务。cloud1没有访问。
