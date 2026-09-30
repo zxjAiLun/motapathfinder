@@ -61,7 +61,7 @@ function canonicalEndpoint(floorId, kind, x, y, tileId, transitionTarget) {
 // ---- TowerIR endpoint generation (independent of the legacy classifier) ----
 // Endpoints are derived from ir.pois (kind/tileId/transition), never by
 // re-scanning the project tile definitions, so POI compile errors are visible.
-function collectTowerIrEndpoints(ir, project, state, dyn, reachableComponents, reachableOpenPois, reachableReplacedCells) {
+function collectTowerIrEndpoints(ir, project, state, dyn, reachableComponents, reachableOpenPois, reachableReplacedCells, reachableStartCell = null) {
   const floorId = dyn.floorId;
   const floorPois = ir.pois.filter((poi) => poi.floorId === floorId);
   const poiById = new Map(ir.pois.map((poi) => [poi.poiId, poi]));
@@ -105,7 +105,7 @@ function collectTowerIrEndpoints(ir, project, state, dyn, reachableComponents, r
       const key = `${floorId}:${coordinateKey(x, y)}`;
       const adjacentOpen = firstOpenPoiAt(x, y);
       if (adjacentOpen && reachableOpenPois.has(adjacentOpen.poiId)) return true;
-      if (replacedByCell.has(key)) return true;
+      if (replacedByCell.has(key) || key === reachableStartCell) return true;
       return false;
     });
   };
@@ -347,22 +347,13 @@ function evaluateTowerIRReachability(ir, project, state, options) {
     y: y + DIRECTION_DELTAS[direction].y,
   }));
 
-  // Start node: hero loc is a static transit cell -> its component.  Otherwise
-  // the hero is on an open POI cell (removed/replaced) -> that cell node.
+  // A blocked hero location is still a valid root: the reference flood fill
+  // includes it and can leave toward transit neighbors without opening it.
   const locKey = `${floorId}:${coordinateKey(dyn.loc.x, dyn.loc.y)}`;
   const startComponentId = componentByCoordinate[locKey] || null;
   const startOpenPoi = startComponentId == null ? firstOpenPoiAt(dyn.loc.x, dyn.loc.y) : null;
   const startReplacedCell = startComponentId == null && !startOpenPoi ? replacedTransitByCell.get(locKey) || null : null;
-  if (startComponentId == null && !startOpenPoi && !startReplacedCell) {
-    return {
-      startComponentId: null,
-      reachableComponentIds: [],
-      reachablePoiIds: [],
-      reachableEndpointDescriptors: [],
-      regionSemanticSignature: null,
-      diagnostics: { startUnresolved: true },
-    };
-  }
+  const startBlocked = startComponentId == null && !startOpenPoi && !startReplacedCell;
 
   const reachableComponents = new Set();
   const reachableOpenPois = new Set();
@@ -378,6 +369,17 @@ function evaluateTowerIRReachability(ir, project, state, options) {
   if (startComponentId) pushNode("component", startComponentId);
   if (startOpenPoi) pushNode("openPoi", startOpenPoi.poiId);
   if (startReplacedCell) pushNode("replacedCell", startReplacedCell.key);
+  if (startBlocked) {
+    neighborCellKeys(dyn.loc.x, dyn.loc.y).forEach(({ x, y }) => {
+      const key = `${floorId}:${coordinateKey(x, y)}`;
+      const componentId = componentByCoordinate[key];
+      if (componentId) pushNode("component", componentId);
+      const poi = firstOpenPoiAt(x, y);
+      if (poi) pushNode("openPoi", poi.poiId);
+      const replaced = replacedTransitByCell.get(key);
+      if (replaced) pushNode("replacedCell", replaced.key);
+    });
+  }
   while (queue.length > 0) {
     const { type, id } = queue.shift();
     if (type === "component") {
@@ -436,6 +438,7 @@ function evaluateTowerIRReachability(ir, project, state, options) {
   // Reachable cells: static transit cells of reachable components + reachable
   // open POI cells.
   const reachableCells = new Set();
+  if (startBlocked) reachableCells.add(locKey);
   floorComponents.forEach((component) => {
     if (!reachableComponents.has(component.componentId)) return;
     component.staticCells.forEach(({ x, y }) => {
@@ -460,6 +463,7 @@ function evaluateTowerIRReachability(ir, project, state, options) {
     reachableComponents,
     reachableOpenPois,
     reachableReplacedCells,
+    startBlocked ? locKey : null,
   );
 
   const regionSemanticSignature = fingerprintJson({

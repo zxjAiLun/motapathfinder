@@ -69,13 +69,14 @@ function canEquip(project, state, equipId) {
   }
 }
 
-function compareEquipment(project, equipId, unloadEquipId) {
+function compareEquipment(project, equipId, unloadEquipId, hero) {
   const result = { value: {}, percentage: {} };
   const first = project.itemsById[equipId];
   const second = project.itemsById[unloadEquipId];
+  const fields = hero ? Object.keys(hero).filter((name) => typeof hero[name] === "number") : HERO_NUMERIC_FIELDS;
 
   ["value", "percentage"].forEach((kind) => {
-    HERO_NUMERIC_FIELDS.forEach((name) => {
+    fields.forEach((name) => {
       let delta = 0;
       if (first && first.equip && first.equip[kind]) delta += Number(first.equip[kind][name] || 0);
       if (second && second.equip && second.equip[kind]) delta -= Number(second.equip[kind][name] || 0);
@@ -84,6 +85,27 @@ function compareEquipment(project, equipId, unloadEquipId) {
   });
 
   return result;
+}
+
+function applyEquipmentDelta(state, delta) {
+  Object.entries(delta.percentage).forEach(([name, value]) => addBuff(state, name, Number(value || 0) / 100));
+  Object.entries(delta.value).forEach(([name, value]) => {
+    state.hero[name] = Number(state.hero[name] || 0) + Number(value || 0);
+  });
+}
+
+function unloadEquipment(project, state, slot) {
+  if (!Number.isInteger(slot) || slot < 0) throw new Error(`Invalid equipment slot: ${slot}`);
+  const equipment = state.hero.equipment;
+  if (equipment != null && !Array.isArray(equipment)) throw new Error("Equipment must be an array");
+  const itemId = (equipment || [])[slot];
+  if (!itemId) return;
+  if (!project.itemsById[itemId] || !project.itemsById[itemId].equip) {
+    throw new Error(`Unmodeled equipped item: ${itemId}`);
+  }
+  applyEquipmentDelta(state, compareEquipment(project, null, itemId, state.hero));
+  addItem(state, itemId, 1);
+  equipment[slot] = null;
 }
 
 class EquipmentResolver {
@@ -105,14 +127,9 @@ class EquipmentResolver {
     if (equipType < 0) throw new Error(`Cannot equip ${action.equipId}.`);
 
     const unloadEquipId = (state.hero.equipment || [])[equipType] || null;
-    const delta = compareEquipment(project, action.equipId, unloadEquipId);
+    const delta = compareEquipment(project, action.equipId, unloadEquipId, state.hero);
 
-    Object.entries(delta.percentage).forEach(([name, value]) => {
-      addBuff(state, name, Number(value || 0) / 100);
-    });
-    Object.entries(delta.value).forEach(([name, value]) => {
-      state.hero[name] = Number(state.hero[name] || 0) + Number(value || 0);
-    });
+    applyEquipmentDelta(state, delta);
 
     consumeItem(state, action.equipId, 1);
     if (unloadEquipId) addItem(state, unloadEquipId, 1);
@@ -127,4 +144,5 @@ module.exports = {
   compareEquipment,
   getBuff,
   getEquipType,
+  unloadEquipment,
 };

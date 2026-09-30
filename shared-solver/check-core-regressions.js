@@ -100,14 +100,18 @@ function checkEventMacroMatrix() {
   const { simulator, initialState } = makeContext();
   const actions = simulator.enumerateActions(initialState).filter((action) => action.kind === "event");
   assert(actions.length > 0, "expected event macro actions");
-  const samples = actions.slice(0, 5).map((eventAction) => {
-    assert.strictEqual(eventAction.unsupported, false, `event should choose supported branch: ${eventAction.summary}`);
+  const supported = actions.filter((action) => !action.unsupported);
+  const rejected = actions.filter((action) => action.unsupported);
+  assert(supported.length > 0, "supported event branches must remain available");
+  rejected.forEach((action) => assert.throws(() => simulator.applyAction(initialState, action),
+    (error) => error.code === "UNSUPPORTED_EVENT_ACTION", "unmodeled branches fail closed"));
+  const samples = supported.slice(0, 5).map((eventAction) => {
     const nextState = simulator.applyAction(initialState, eventAction);
     assert(nextState.route.includes(eventAction.summary), "event action should be appended to route");
     assert.deepStrictEqual(nextState.notes.filter((note) => /Unsupported event/i.test(note)), [], "event should not emit unsupported UI notes");
     return { summary: eventAction.summary, choicePath: eventAction.choicePath || [], notes: nextState.notes.length };
   });
-  return { total: actions.length, samples };
+  return { total: actions.length, supported: supported.length, rejected: rejected.length, samples };
 }
 
 function discoverRepulseLandingSamples(project, battleResolver, initialState, limit) {

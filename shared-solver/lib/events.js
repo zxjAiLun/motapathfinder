@@ -1,8 +1,9 @@
 "use strict";
 
 const { evaluateCondition, evaluateExpression } = require("./expression");
-const { resolveChangeFloorTarget } = require("./floor-transitions");
+const { recordLeaveLocation, resolveChangeFloorTarget } = require("./floor-transitions");
 const { addItem, removeTileAt, replaceTileAt, hasVisitedFloor, visitFloor } = require("./state");
+const { unloadEquipment } = require("./equipment-resolver");
 
 function applyOperator(targetValue, operator, value) {
   const currentValue = targetValue == null ? 0 : targetValue;
@@ -87,12 +88,6 @@ const NOOP_EVENT_TYPES = new Set([
   "comment",
   "sleep",
   "wait",
-  // Arbitrary scripts are treated as presentation no-ops. A `function` body that
-  // mutates game state is a KNOWN, DOCUMENTED limitation (we do not interpret
-  // arbitrary JavaScript); it is not silently reclassified as a supported state
-  // change. Keeping this consistent with event-resolver's classifier is what
-  // lets enumeration and execution agree on the same supported surface.
-  "function",
 ]);
 
 const STATE_CHANGING_EVENT_TYPES = new Set([
@@ -102,6 +97,10 @@ const STATE_CHANGING_EVENT_TYPES = new Set([
   "setBlock",
   "changeFloor",
   "win",
+  "function",
+  "insert",
+  "unloadEquip",
+  "unfollow",
 ]);
 
 const SUPPORTED_EVENT_TYPES = new Set([
@@ -124,6 +123,67 @@ function isSupportedEventType(type) {
   return SUPPORTED_EVENT_TYPES.has(type);
 }
 
+const MAX_COMMON_EVENT_DEPTH = 32;
+
+// Deliberately not a JavaScript interpreter. Match the entire audited script,
+// so a familiar prefix plus an unknown effect cannot be accepted as a no-op.
+function getFunctionEventEffect(action) {
+  if (action.async || typeof action.function !== "string") {
+    throw new UnsupportedEventError(action, "only audited synchronous script bodies are supported");
+  }
+  if (/^\s*function\s*\(\s*\)\s*\{\s*\}\s*$/.test(action.function)) return "presentation";
+  if (/^\s*function\s*\(\s*\)\s*\{\s*core\.setFlag\(\s*(['"])__visited__\1\s*,\s*\{\s*\}\s*\)\s*;?\s*\}\s*$/.test(action.function)) {
+    return "clear-visited";
+  }
+  throw new UnsupportedEventError(action, "unrecognized script body");
+}
+
+function getCommonEventActions(project, action, depth) {
+  if (Number(depth || 0) >= MAX_COMMON_EVENT_DEPTH) {
+    throw new UnsupportedEventError(action, "common-event recursion limit");
+  }
+  if (typeof action.name !== "string" || !action.name || action.loc != null || action.floorId != null || action.which != null) {
+    throw new UnsupportedEventError(action, "only named common-event calls are supported");
+  }
+  const events = project.commonEvents || {};
+  if (!Object.prototype.hasOwnProperty.call(events, action.name) || !Array.isArray(events[action.name])) {
+    throw new UnsupportedEventError(action, `missing or malformed common event ${action.name}`);
+  }
+  if (action.args != null && (!Array.isArray(action.args) || action.args.some((value) =>
+    value != null && !["string", "boolean", "number"].includes(typeof value)))) {
+    throw new UnsupportedEventError(action, "only scalar common-event arguments are supported");
+  }
+  return events[action.name];
+}
+
+function applyCommonEventArguments(state, action) {
+  state.flags.arg0 = action.name;
+  // Runtime passes literal values, skips null arguments and does not restore
+  // previous arg flags when a nested common event returns.
+  (action.args || []).forEach((value, index) => {
+    if (value != null) state.flags[`arg${index + 1}`] = value;
+  });
+}
+
+function removeFollower(project, state, action) {
+  if (action.name != null && typeof action.name !== "string") throw new UnsupportedEventError(action, "invalid follower name");
+  const followers = state.hero.followers || [];
+  if (!Array.isArray(followers) || followers.some((follower) => !follower || typeof follower !== "object")) {
+    throw new UnsupportedEventError(action, "malformed followers");
+  }
+  if (!action.name) state.hero.followers = [];
+  else {
+    const mapped = (state.flags.__nameMap__ || {})[action.name] || (((project.data || {}).main || {}).nameMap || {})[action.name] || action.name;
+    const index = followers.findIndex((follower) => follower.name === mapped);
+    if (index >= 0) followers.splice(index, 1);
+    state.hero.followers = followers;
+  }
+  // The engine gathers surviving followers immediately after unfollow.
+  state.hero.followers.forEach((follower) => Object.assign(follower, {
+    x: state.hero.loc.x, y: state.hero.loc.y, direction: state.hero.loc.direction, stop: true,
+  }));
+}
+
 function executeAction(project, state, action, extra, options) {
   if (action == null || typeof action === "string") return;
   if (typeof action !== "object" || !isSupportedEventType(action.type)) {
@@ -133,6 +193,23 @@ function executeAction(project, state, action, extra, options) {
   if (NOOP_EVENT_TYPES.has(action.type)) return;
 
   switch (action.type) {
+    case "function":
+      if (getFunctionEventEffect(action) === "clear-visited") state.visitedFloors = {};
+      return;
+    case "insert": {
+      const depth = Number(options.commonEventDepth || 0);
+      const actions = getCommonEventActions(project, action, depth);
+      applyCommonEventArguments(state, action);
+      executeActionList(project, state, actions, extra, { ...options, commonEventDepth: depth + 1 });
+      return;
+    }
+    case "unloadEquip":
+      if (!Number.isInteger(action.pos) || action.pos < 0) throw new UnsupportedEventError(action, "invalid equipment slot");
+      unloadEquipment(project, state, action.pos);
+      return;
+    case "unfollow":
+      removeFollower(project, state, action);
+      return;
     case "setValue":
       setValueTarget(project, state, action.name, action.operator, action.value, extra);
       return;
@@ -172,6 +249,7 @@ function executeAction(project, state, action, extra, options) {
     }
     case "changeFloor": {
       const target = resolveChangeFloorTarget(project, state, action);
+      recordLeaveLocation(state, target.floorId, { isFlying: false });
       state.floorId = target.floorId;
       state.hero.loc.x = target.x;
       state.hero.loc.y = target.y;
@@ -190,10 +268,20 @@ function executeAction(project, state, action, extra, options) {
 }
 
 function executeActionList(project, state, actions, extra, options) {
-  (actions || []).forEach((action) => {
+  if (!actions || actions.length === 0) return;
+  const depth = Number((options || {}).eventExecutionDepth || 0);
+  const executionOptions = { ...options, eventExecutionDepth: depth + 1 };
+  actions.forEach((action) => {
     if (typeof action === "string") return;
-    executeAction(project, state, action, extra || {}, options || {});
+    executeAction(project, state, action, extra || {}, executionOptions);
   });
+  // Runtime closePanel clears temporary parameters only when the whole event
+  // queue ends, not on return from an if/choice/common-event/arrival sublist.
+  if (depth === 0) {
+    Object.keys(state.flags || {}).forEach((key) => {
+      if (key.startsWith("@temp@") || /^arg\d+$/.test(key)) delete state.flags[key];
+    });
+  }
 }
 
 function runLevelUps(project, state, options) {
@@ -216,12 +304,16 @@ function applyFloorArrival(project, state, floorId, options) {
   const floor = project.floorsById[floorId];
   if (!floor) throw new Error(`Unknown floor: ${floorId}`);
 
+  const actions = [];
   if (!hasVisitedFloor(state, floorId)) {
-    executeActionList(project, state, floor.firstArrive || [], { floorId }, options);
+    // The runtime queues firstArrive, marks visited, then executes the queue.
+    // A firstArrive script may deliberately clear that mark again.
     visitFloor(state, floorId);
+    actions.push(...(floor.firstArrive || []));
   }
 
-  executeActionList(project, state, floor.eachArrive || [], { floorId }, options);
+  actions.push(...(floor.eachArrive || []));
+  executeActionList(project, state, actions, { floorId }, options);
   runAutoEvents(project, state, options);
 }
 
@@ -267,6 +359,10 @@ module.exports = {
   SUPPORTED_EVENT_TYPES,
   STATE_CHANGING_EVENT_TYPES,
   UnsupportedEventError,
+  MAX_COMMON_EVENT_DEPTH,
+  getFunctionEventEffect,
+  getCommonEventActions,
+  applyCommonEventArguments,
   isSupportedEventType,
   applyFloorArrival,
   executeActionList,

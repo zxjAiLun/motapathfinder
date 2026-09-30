@@ -48,8 +48,9 @@ const simulator = makeSimulator(project, smokeSpec, {});
 const EXP9_GOAL = { type: "heroAtLeast", floorId: "MT1", minHero: { exp: 9 } };
 const OBJ = { mode: "max-final-hp" };
 const REPRESENTATIVE_WINNER = "a2ff379819ac9003";
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
 const REPRESENTATIVE_ROUTE =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint;
 const REPRESENTATIVE_OBJ_FP = "b54217a839b77018";
 const REPRESENTATIVE_OBJ_VALUE = 1346;
 const PRODUCTION_SCALE = {
@@ -219,7 +220,7 @@ async function scenario1() {
   const c = extractCorrectness(execution);
   assert.strictEqual(c.found, true, "S1: default must find the goal");
   assert.strictEqual(c.winnerExactFingerprint, REPRESENTATIVE_WINNER, "S1: default winner must match pinned baseline");
-  assert.strictEqual(c.routeFingerprint, REPRESENTATIVE_ROUTE, "S1: default route must match pinned baseline");
+  assert.strictEqual(c.routeFingerprint, REPRESENTATIVE_ROUTE, "S1: default route must match PR-5.33b snapshot baseline");
   assert.strictEqual(c.objectiveFingerprint, REPRESENTATIVE_OBJ_FP, "S1: default objective fp must match pinned baseline");
   assert.strictEqual(c.objectiveValue, REPRESENTATIVE_OBJ_VALUE, "S1: default objective value must match pinned baseline");
   return { defaultPromotes: true, defaultMatchesPinned: true };

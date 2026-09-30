@@ -27,7 +27,7 @@ function normalizeFlags(flags) {
     .sort()
     .reduce((result, key) => {
       if (key === "__frontierFeatures") return result;
-      if (key === "__leaveLoc__") {
+      if (key === "__leaveLoc__" || key === "__nameMap__") {
         const value = flags[key];
         if (value != null && typeof value === "object" && Object.keys(value).length > 0) {
           result[key] = value;
@@ -62,6 +62,7 @@ function normalizeHero(hero, heroFields) {
   };
   if (!heroFields) {
     normalized.equipment = Array.isArray((hero || {}).equipment) ? hero.equipment.slice() : [];
+    normalized.followers = Array.isArray((hero || {}).followers) ? hero.followers.slice() : [];
   }
   return normalized;
 }
@@ -123,6 +124,8 @@ function buildSolverSnapshot(project, state, options) {
     hero: normalizeHero(state.hero, heroFields),
     inventory: stableObject(state.inventory),
     flags: normalizeFlags(state.flags),
+    // Snapshot floor coverage is a verification scope, not visitation history.
+    visitedFloors: Object.keys(state.visitedFloors || {}).filter((floorId) => state.visitedFloors[floorId]).sort(),
     floors,
   };
   // One-shot auto-event history is part of state identity, so a snapshot used to

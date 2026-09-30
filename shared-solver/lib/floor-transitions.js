@@ -3,6 +3,24 @@
 const { evaluateExpression } = require("./expression");
 const { getTileDefinitionAt } = require("./state");
 
+function cloneHeroLoc(state) {
+  const loc = ((state || {}).hero || {}).loc || {};
+  return {
+    x: Number(loc.x || 0),
+    y: Number(loc.y || 0),
+    direction: loc.direction || "down",
+  };
+}
+
+function recordLeaveLocation(state, targetFloorId, options) {
+  const config = options || {};
+  if (!state || !state.floorId || !state.hero) return;
+  if (config.isFlying && state.floorId === targetFloorId) return;
+  state.flags = state.flags || {};
+  state.flags.__leaveLoc__ = state.flags.__leaveLoc__ || {};
+  state.flags.__leaveLoc__[state.floorId] = cloneHeroLoc(state);
+}
+
 function resolveRelativeFloor(project, currentFloorId, targetFloorId) {
   if (targetFloorId !== ":before" && targetFloorId !== ":next") {
     return targetFloorId;
@@ -65,6 +83,8 @@ function resolveChangeFloorTarget(project, state, changeData) {
 }
 
 module.exports = {
+  cloneHeroLoc,
+  recordLeaveLocation,
   resolveChangeFloorTarget,
   resolveRelativeFloor,
 };

@@ -49,8 +49,9 @@ function buildWorkloadGoalPredicate(goal) {
   return buildSegmentGoalPredicate(project, { goal }, simulator);
 }
 
-const COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
+const CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT =
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint;
 const COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT = "a2ff379819ac9003";
 const COMMIT2_OBJECTIVE_FINGERPRINT = "b54217a839b77018";
 
@@ -63,37 +64,37 @@ const COMMIT2_OBJECTIVE_FINGERPRINT = "b54217a839b77018";
 const PINNED_WORKLOADS = {
   "exp9-maxfinalhp": {
     winnerExactFingerprint: COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT,
-    routeFingerprint: COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT,
+    routeFingerprint: CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT,
     objectiveFingerprint: COMMIT2_OBJECTIVE_FINGERPRINT,
     objectiveValue: 1346,
   },
   "exp6-maxfinalhp": {
     winnerExactFingerprint: "00263e2f4529f32b",
-    routeFingerprint: '{"algorithm":"sha256-stable-json-v1","sha256":"f375f94a34a7ce018656df555251684c9164b211ebe8e5a87ff8747dec482558"}',
+    routeFingerprint: require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp6-maxfinalhp"].currentRouteFingerprint,
     objectiveFingerprint: "b54217a839b77018",
     objectiveValue: 1242,
   },
   "exp8-maxfinalhp": {
     winnerExactFingerprint: "4e6c8915fe03e65e",
-    routeFingerprint: '{"algorithm":"sha256-stable-json-v1","sha256":"9406654d1fbdaf2651b1cc580d8a58237531d7fc26b918a613ef19e18170c8cd"}',
+    routeFingerprint: require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp8-maxfinalhp"].currentRouteFingerprint,
     objectiveFingerprint: "b54217a839b77018",
     objectiveValue: 1308,
   },
   "exp9-maxatk": {
     winnerExactFingerprint: "d885f53ee61e396b",
-    routeFingerprint: '{"algorithm":"sha256-stable-json-v1","sha256":"10ad0368e484030ea0c891ea4a55e056700ee6b27922f6b1bf417892dbc52ef9"}',
+    routeFingerprint: require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxatk"].currentRouteFingerprint,
     objectiveFingerprint: "7f16d6a7576b114a",
     objectiveValue: 21,
   },
   "tile4_1-maxfinalhp": {
     winnerExactFingerprint: "ec78c20a8c2c47e2",
-    routeFingerprint: '{"algorithm":"sha256-stable-json-v1","sha256":"e4027694a3f23977938eabe6848dbbd9e8168214926fa52f8dfe3a54c9f6ed6c"}',
+    routeFingerprint: require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["tile4_1-maxfinalhp"].currentRouteFingerprint,
     objectiveFingerprint: "b54217a839b77018",
     objectiveValue: 1539,
   },
   "tile2_1-maxfinalhp": {
     winnerExactFingerprint: "21e8a075df3344a9",
-    routeFingerprint: '{"algorithm":"sha256-stable-json-v1","sha256":"d13631cfb59818a859d1393eccd7ab63c6293d2c0f59787b4b80be7e1dd751b3"}',
+    routeFingerprint: require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["tile2_1-maxfinalhp"].currentRouteFingerprint,
     objectiveFingerprint: "b54217a839b77018",
     objectiveValue: 2638,
   },

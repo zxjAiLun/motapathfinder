@@ -148,12 +148,11 @@ async function main() {
   const repTask = buildBaselineTask("representative-baseline");
   const repBaseline = await runPerfBaseline({ profile: "representative-baseline", task: repTask });
   assertReportShape(repBaseline, "representative");
-  // Cross-version parity with Commit 1 (PR-5.4b route-free refactor must not
-  // change the search outcome or fingerprints).
+  // PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
   assert.strictEqual(
     repBaseline.result.routeFingerprint,
-    '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}',
-    "representative routeFingerprint must match Commit 1",
+    require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint,
+    "representative routeFingerprint must match PR-5.33b snapshot baseline",
   );
   assert.strictEqual(
     repBaseline.result.winnerExactFingerprint,

@@ -6,7 +6,7 @@ const { EquipmentResolver } = require("./equipment-resolver");
 const { EventResolver } = require("./event-resolver");
 const { evaluateExpression } = require("./expression");
 const { applyFloorArrival, executeActionList, runAutoEvents, runLevelUps } = require("./events");
-const { resolveChangeFloorTarget } = require("./floor-transitions");
+const { cloneHeroLoc, recordLeaveLocation, resolveChangeFloorTarget } = require("./floor-transitions");
 const { computeFrontierFeatures } = require("./frontier-features");
 const { scoutChangeFloor } = require("./floor-scout");
 const { createResourceLookaheadCache, evaluateActionResourceLookahead } = require("./resource-lookahead");
@@ -176,24 +176,6 @@ function getProjectFlag(project, state, key, fallback) {
   if (state && state.flags && Object.prototype.hasOwnProperty.call(state.flags, key)) return state.flags[key];
   if (project && project.defaultFlags && Object.prototype.hasOwnProperty.call(project.defaultFlags, key)) return project.defaultFlags[key];
   return fallback;
-}
-
-function cloneHeroLoc(state) {
-  const loc = ((state || {}).hero || {}).loc || {};
-  return {
-    x: Number(loc.x || 0),
-    y: Number(loc.y || 0),
-    direction: loc.direction || "down",
-  };
-}
-
-function recordLeaveLocation(state, targetFloorId, options) {
-  const config = options || {};
-  if (!state || !state.floorId || !state.hero) return;
-  if (config.isFlying && state.floorId === targetFloorId) return;
-  state.flags = state.flags || {};
-  state.flags.__leaveLoc__ = state.flags.__leaveLoc__ || {};
-  state.flags.__leaveLoc__[state.floorId] = cloneHeroLoc(state);
 }
 
 function findTilePositionById(project, state, floorId, tileId) {

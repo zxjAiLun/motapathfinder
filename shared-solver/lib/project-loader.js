@@ -53,6 +53,8 @@ function loadProject(projectRoot) {
   const icons = loadGeneratedObject(path.join(projectDir, "icons.js"), "icons_");
   const mapTilesByNumber = loadGeneratedObject(path.join(projectDir, "maps.js"), "maps_");
   const floorsById = loadFloors(path.join(projectDir, "floors"));
+  const eventsPath = path.join(projectDir, "events.js");
+  const eventData = fs.existsSync(eventsPath) ? loadGeneratedObject(eventsPath, "events_") : {};
 
   return {
     root: projectRoot,
@@ -66,6 +68,7 @@ function loadProject(projectRoot) {
     enemysById,
     icons,
     mapTilesByNumber,
+    commonEvents: eventData.commonEvent || {},
     mapNumbersById: buildIdToNumberIndex(mapTilesByNumber),
   };
 }

@@ -42,9 +42,9 @@ const project = loadProject(ONLY_UP_ROOT);
 const smokeSpec = JSON.parse(fs.readFileSync(SMOKE_SPEC_FILE, "utf8"));
 const smokeIr = compileTowerIR(project, smokeSpec, { towerId: "onlyup-smoke" });
 
-// Commit 2 reference fingerprints (route-free state, before TowerIR).
-const COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
+const CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT =
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint;
 const COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT = "a2ff379819ac9003";
 
 function buildRepresentativeTask(captureLimit) {
@@ -298,6 +298,17 @@ function checkMutationDifferential() {
   const leftSignature = closedIr.regionSemanticSignature;
   const rightSignature = evaluateTowerIRReachability(doorIr, doorProject, rightState).regionSemanticSignature;
   assert.notStrictEqual(leftSignature, rightSignature, "door present: left and right must be disconnected");
+  // An event/arrival can leave the hero on a still-present blocker. The root
+  // may leave to either side, but must not globally turn that blocker open.
+  const onDoor = makeState(2, 1);
+  const blockedRoot = doorShadow.checkState(onDoor);
+  assert.ok(blockedRoot.comparison.match, "blocked root must match the reference flood fill");
+  assert.ok(blockedRoot.ir.reachableCells.includes("SD1:2,1"), "include the blocked root itself");
+  assert.strictEqual(blockedRoot.ir.reachableComponentIds.length, 2, "root can leave toward both sides");
+  assert.ok(!blockedRoot.ir.reachableCells.includes("SD1:2,0"), "adjacent closed door stays blocked");
+  assert.ok(blockedRoot.ir.reachableEndpointDescriptors.some((poi) => poi.x === 2 && poi.y === 0), "adjacent blocked endpoint stays observable");
+  assert.deepStrictEqual(onDoor.floorStates.SD1.removed, {}, "shadow must not open the root tile");
+  assert.strictEqual(evaluateTowerIRReachability(doorIr, doorProject, leftState).regionSemanticSignature, leftSignature, "ordinary left state remains isolated");
   const openedState = makeState(0, 1, (state) => removeTileAt(state, "SD1", doorPoi.x, doorPoi.y));
   const opened = evaluateTowerIRReachability(doorIr, doorProject, openedState);
   const openedLegacy = computeLegacyStructuralReachability(doorProject, openedState);
@@ -412,8 +423,8 @@ async function checkRepresentativeShadowParity() {
     : null;
   assert.strictEqual(
     routeFingerprint ? routeFingerprint.hash || JSON.stringify(routeFingerprint) : null,
-    COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT,
-    "routeFingerprint must match Commit 2",
+    CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT,
+    "routeFingerprint must match PR-5.33b snapshot baseline",
   );
   const winnerState = execution.result.finalCandidate && execution.result.finalCandidate.state;
   assert.ok(winnerState, "winner state required");
@@ -593,7 +604,7 @@ async function main() {
       towerIrElapsedMs: shadow.towerIrElapsedMs,
     },
     productionParity: {
-      routeFingerprint: COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT,
+      routeFingerprint: CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT,
       winnerExactFingerprint: COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT,
       expanded: dp && dp.expansions,
       generated: dp && dp.generatedActions,

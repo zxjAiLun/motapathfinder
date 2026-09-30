@@ -2,6 +2,8 @@
 
 const assert = require("node:assert");
 const fs = require("node:fs");
+const path = require("node:path");
+const CURRENT_OUT = path.join(__dirname, "routes/fixtures/pr533b-replay-flag-merge-cli.json");
 
 const {
   CONTRACT_SCHEMA,
@@ -82,7 +84,11 @@ async function main() {
 
   const rebuilt = await buildReport();
   assertReport(rebuilt);
-  assert.deepStrictEqual(normalizeReport(rebuilt), normalizeReport(saved), "full report rebuild must be deterministic");
+  // Preserve the historical report; the richer snapshot representation has a
+  // versioned identity baseline with unchanged route and mismatch controls.
+  const current = readJson(CURRENT_OUT);
+  assertReport(current);
+  assert.deepStrictEqual(normalizeReport(rebuilt), normalizeReport(current), "full report rebuild must be deterministic");
   assert.strictEqual(markdownReport(rebuilt), savedMarkdown, "markdown rebuild must be deterministic");
   process.stdout.write("replay flag merge and CLI gate contract check passed (per-floor continuation, mismatch, direct CLI)\n");
 }

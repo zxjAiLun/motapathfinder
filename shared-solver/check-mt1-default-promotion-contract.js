@@ -47,8 +47,9 @@ const simulator = makeSimulator(project, smokeSpec, {});
 // Pinned representative exp9 baseline (winner/route/objective) and production
 // structural counters, from the closed PR-5.4c/5.4d/5.4e baseline.
 const REPRESENTATIVE_WINNER = "a2ff379819ac9003";
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
 const REPRESENTATIVE_ROUTE =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint;
 const REPRESENTATIVE_OBJECTIVE_FINGERPRINT = "b54217a839b77018";
 const REPRESENTATIVE_OBJECTIVE_VALUE = 1346;
 const PRODUCTION_SCALE = {
@@ -231,7 +232,7 @@ async function gateERepresentativeDefault(normalizedSpec) {
   const correctness = extractCorrectness(execution);
   assert.strictEqual(correctness.found, true, "E: default must find the goal");
   assert.strictEqual(correctness.winnerExactFingerprint, REPRESENTATIVE_WINNER, "E: default winner must match pinned baseline");
-  assert.strictEqual(correctness.routeFingerprint, REPRESENTATIVE_ROUTE, "E: default route must match pinned baseline");
+  assert.strictEqual(correctness.routeFingerprint, REPRESENTATIVE_ROUTE, "E: default route must match PR-5.33b snapshot baseline");
   assert.strictEqual(correctness.objectiveFingerprint, REPRESENTATIVE_OBJECTIVE_FINGERPRINT, "E: default objective fingerprint must match pinned baseline");
   assert.strictEqual(correctness.objectiveValue, REPRESENTATIVE_OBJECTIVE_VALUE, "E: default objective value must match pinned baseline");
   return {

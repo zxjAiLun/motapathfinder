@@ -24,7 +24,9 @@ const ROOT = path.resolve(__dirname, "..");
 const ONLY_UP_ROOT = path.join(ROOT, "Only upV2.1", "Only upV2.1");
 const SMOKE_SPEC_FILE = path.join(ROOT, "towers", "onlyup", "region-specs", "region-output-contract-smoke.json");
 const EXPECTED_WINNER_EXACT = "a2ff379819ac9003";
-const EXPECTED_ROUTE_SHA256 = "c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13";
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
+const EXPECTED_ROUTE_SHA256 =
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteSha256;
 const EXPECTED_OBJECTIVE_VALUE = 1346;
 
 function buildTask() {

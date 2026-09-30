@@ -42,8 +42,9 @@ const simulator = makeSimulator(project, smokeSpec, {});
 
 const GOAL_PREDICATE = (state) => Boolean(state.floorId === "MT1" && state.hero && (state.hero.exp || 0) >= 9);
 
-const COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
+const CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT =
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint;
 const COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT = "a2ff379819ac9003";
 
 function makeShadow(config) {

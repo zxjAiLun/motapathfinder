@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run check:manifest
       - run: npm run check:no-tower-solver-js
+      - run: npm run check:boss-events
       - run: npm run check:solver-job
       - run: npm run check:launcher
       - run: npm run check:route-free-state

@@ -439,6 +439,9 @@ function normalizeRuntimeSnapshotPair(expected, actual, config) {
   // as an EMPTY array, treat the missing side as `[]`.  A non-empty array on
   // either side is left untouched so a real difference still surfaces.
   equalizeEmptyHeroArrayFields(normalizedExpected.hero, normalizedActual.hero);
+  // Legacy snapshots did not observe visitation. New explicit history, even
+  // [], must be compared, never copied from expected into missing runtime data.
+  if (!Object.prototype.hasOwnProperty.call(normalizedExpected, "visitedFloors")) delete normalizedActual.visitedFloors;
   return { expected: normalizedExpected, actual: normalizedActual };
 }
 
@@ -548,7 +551,7 @@ function buildRuntimeProjectedSolverStateKeyFromSnapshot(snapshot, templateExact
     hero,
     inventory: stableRuntimeValue(normalized.inventory || {}),
     flags: stableRuntimeValue(normalized.flags || {}),
-    visitedFloors: Object.keys(normalized.floors || {}).sort(),
+    visitedFloors: Array.isArray(normalized.visitedFloors) ? normalized.visitedFloors.slice().sort() : Object.keys(normalized.floors || {}).sort(),
     mutations,
   };
   return JSON.stringify(stableRuntimeValue(projected));
@@ -590,7 +593,7 @@ function buildRuntimeProjectedSolverStateKeyPair(expected, actual, templateExact
 // the unit-testable source of truth and the two must stay in sync.
 function isRepresentableReplayFlag(key, value) {
   if (key === "autoBattle") return false;
-  if (key === "__leaveLoc__") {
+  if (key === "__leaveLoc__" || key === "__nameMap__") {
     return value != null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
   }
   if (key.startsWith("__") && !key.endsWith("_buff__")) return false;
@@ -785,10 +788,11 @@ async function restoreRuntimeSnapshotStart(page, snapshot, options) {
       core.status.hero.items = core.status.hero.items || {};
       core.status.hero.items.tools = {};
       core.status.hero.items.constants = {};
+      core.status.hero.items.equips = {};
       Object.entries(startSnapshot.inventory || {}).forEach(([itemId, amount]) => {
         if (amount == null || amount === 0) return;
         const item = core.material.items[itemId] || {};
-        const bucket = item.cls === "constants" ? "constants" : "tools";
+        const bucket = item.cls === "constants" || item.cls === "equips" ? item.cls : "tools";
         core.status.hero.items[bucket][itemId] = amount;
       });
 
@@ -803,7 +807,7 @@ async function restoreRuntimeSnapshotStart(page, snapshot, options) {
       const runtimeFlags = (core.status.hero && core.status.hero.flags) || {};
       const isRepresentable = (key, value) => {
         if (key === "autoBattle") return false;
-        if (key === "__leaveLoc__") {
+        if (key === "__leaveLoc__" || key === "__nameMap__") {
           return value != null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length > 0;
         }
         if (key.startsWith("__") && !key.endsWith("_buff__")) return false;
@@ -820,6 +824,9 @@ async function restoreRuntimeSnapshotStart(page, snapshot, options) {
         if (key === "autoBattle") return;
         core.setFlag(key, value);
       });
+      if (Array.isArray(startSnapshot.visitedFloors)) {
+        core.setFlag("__visited__", Object.fromEntries(startSnapshot.visitedFloors.map((floorId) => [floorId, true])));
+      }
 
       Object.entries(startSnapshot.floors || {}).forEach(([floorId, floor]) => {
         (floor.removed || []).forEach((loc) => {
@@ -1128,7 +1135,7 @@ async function captureRuntimeSnapshot(page, options) {
     const flags = Object.keys(hero.flags || {})
       .sort()
       .reduce((result, key) => {
-        if (key === "__leaveLoc__") {
+        if (key === "__leaveLoc__" || key === "__nameMap__") {
           const value = hero.flags[key];
           if (value != null && typeof value === "object" && Object.keys(value).length > 0) {
             result[key] = value;
@@ -1172,6 +1179,7 @@ async function captureRuntimeSnapshot(page, options) {
       hero: normalizedHero,
       inventory,
       flags,
+      visitedFloors: Object.keys((hero.flags || {}).__visited__ || {}).filter((floorId) => hero.flags.__visited__[floorId]).sort(),
       floors,
     };
   }, { verifyFloors: config.verifyFloors || ["MT1", "MT2", "MT3"], heroFields: config.heroFields || DEFAULT_HERO_FIELDS });

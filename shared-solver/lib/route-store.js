@@ -314,11 +314,14 @@ function createStateFromSnapshot(project, snapshot, options) {
   state.inventory = cloneJson(snapshot.inventory) || {};
   state.flags = cloneJson(snapshot.flags) || {};
   state.floorStates = {};
-  state.visitedFloors = Object.keys(snapshot.floors || {}).reduce((visited, floorId) => {
-    visited[floorId] = true;
-    return visited;
-  }, {});
-  state.visitedFloors[state.floorId] = true;
+  const hasVisitedHistory = Object.prototype.hasOwnProperty.call(snapshot, "visitedFloors");
+  if (hasVisitedHistory && (!Array.isArray(snapshot.visitedFloors) || snapshot.visitedFloors.some((floorId) => typeof floorId !== "string"))) {
+    throw new Error("Invalid visitedFloors in route snapshot.");
+  }
+  const visitedIds = hasVisitedHistory ? snapshot.visitedFloors : Object.keys(snapshot.floors || {});
+  state.visitedFloors = Object.fromEntries(visitedIds.map((floorId) => [floorId, true]));
+  // Explicit [] is meaningful after a reset, including on the current floor.
+  if (!hasVisitedHistory) state.visitedFloors[state.floorId] = true;
   // Restore one-shot auto-event history so a resumed/replayed state does not
   // re-fire auto-events that already fired in the original prefix. Absent in
   // legacy snapshots (empty history) -> stays an empty map.

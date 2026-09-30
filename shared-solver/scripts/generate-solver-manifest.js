@@ -350,6 +350,13 @@ for (const file of listSolverLibFiles(libDir)) {
 }
 
 const TEST_OVERRIDES = {
+  "shared-solver/check-boss-event-contract.js": {
+    grade: "unit-plus-micro",
+    allowsNotFound: true,
+    requiresStrictReplay: true,
+    cleanCheckout: true,
+    notes: "PR-5.33b fail-closed script classification, named/nested common events, literal argument semantics and recursion guards, unload/follower/visited-history effects, explicit snapshot history round-trip, real DP + durable strict-replay terminal and unsupported-script negative control; synthetic clean-checkout inputs only",
+  },
   "shared-solver/check-floor-fly-contract.js": {
     grade: "unit-plus-micro",
     allowsNotFound: false,
@@ -362,7 +369,7 @@ const TEST_OVERRIDES = {
     allowsNotFound: true,
     requiresStrictReplay: false,
     cleanCheckout: true,
-    notes: "PR-5.33a synthetic contract: executeActionList throws UnsupportedEventError on unmodeled state effects (unloadEquip/insert/unfollow) while presentation no-ops and supported state changes still work; searchDP counts provider/apply errors as modelErrors so an exhausted frontier with dropped transitions classifies as *-model-errors, never search-complete; doctor warns it is not exhaustive no-route evidence",
+    notes: "PR-5.33a/b synthetic contract: unknown scripts/effects and malformed supported event calls throw UnsupportedEventError; only explicitly audited presentation no-ops pass; searchDP model errors block false completeness and doctor warns against exhaustive no-route claims",
   },
   "shared-solver/check-state-identity-auto-events.js": {
     grade: "unit",
@@ -2008,6 +2015,7 @@ const manifest = {
         "shared-solver/check-dp-observer.js",
         "shared-solver/check-unsupported-event-fidelity.js",
         "shared-solver/check-state-identity-auto-events.js",
+        "shared-solver/check-boss-event-contract.js",
         "shared-solver/check-objective-safe-archive.js",
         "shared-solver/check-solve-task-contract.js",
         "shared-solver/check-solve-task-v2-contract.js",

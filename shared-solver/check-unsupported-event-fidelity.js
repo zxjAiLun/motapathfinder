@@ -10,10 +10,10 @@
  *
  * Two layers are covered:
  *   1. events.executeActionList throws UnsupportedEventError on unknown
- *      state-changing action types (e.g. unloadEquip / insert / unfollow) that
- *      were previously appended to state.notes and skipped. Presentation
- *      no-ops (function / setText / showStatusBar) still pass, and supported
- *      state-changing actions (setValue / hide) still apply.
+ *      actions and unrecognized function bodies. PR-5.33b adds the supported
+ *      named common-event / unload / unfollow surface; malformed calls still
+ *      reject. Only an audited empty function is a presentation no-op here.
+ *      Supported state-changing actions (setValue / hide) still apply.
  *   2. searchDP counts provider/apply errors as modelErrors and buildSearchOutcome
  *      forces searchComplete=false with a *-model-errors outcome class, so an
  *      exhausted frontier with dropped transitions is not mislabeled complete.
@@ -75,11 +75,11 @@ function assertThrowsUnsupported(actions, expectedType) {
 }
 
 function checkUnsupportedStateEffectsThrow() {
-  // The concrete counterexample: the Neko Boss afterBattle uses unloadEquip and
-  // insert("清空状态"). Both were previously silent notes; both must now throw.
+  // Missing/invalid calls remain explicit errors after PR-5.33b support.
   assertThrowsUnsupported([{ type: "unloadEquip" }], "unloadEquip");
   assertThrowsUnsupported([{ type: "insert", name: "清空状态" }], "insert");
-  assertThrowsUnsupported([{ type: "unfollow" }], "unfollow");
+  assertThrowsUnsupported([{ type: "unmodeledEffect" }], "unmodeledEffect");
+  assertThrowsUnsupported([{ type: "function", function: "function(){ core.setStatus('hp', 0); }" }], "function");
   // Nested inside a supported control-flow branch it must still surface.
   assertThrowsUnsupported(
     [{ type: "if", condition: "1", true: [{ type: "setValue", name: "status:hp", operator: "+=", value: "10" }, { type: "unloadEquip" }], false: [] }],
@@ -90,18 +90,18 @@ function checkUnsupportedStateEffectsThrow() {
 }
 
 function checkPresentationNoopsAndSupportedStillWork() {
-  assert.strictEqual(isSupportedEventType("function"), true, "presentation script stays a supported no-op");
+  assert.strictEqual(isSupportedEventType("function"), true, "individual script bodies also require classification");
   assert.strictEqual(isSupportedEventType("setText"), true);
-  assert.strictEqual(isSupportedEventType("unloadEquip"), false);
+  assert.strictEqual(isSupportedEventType("unloadEquip"), true);
 
   const project = makeEventProject();
   const state = makeEventState();
-  // Presentation no-ops (including arbitrary function bodies) must not throw and
-  // must not mutate representable state.
+  // Only an explicitly supported empty script is a presentation no-op.
+  // Unknown bodies are checked by the negative tests above.
   executeActionList(project, state, [
     { type: "showStatusBar" },
     { type: "setText", text: "hello" },
-    { type: "function", function: "function(){ core.doSomethingUnmodeled(); }" },
+    { type: "function", function: "function(){}" },
     { type: "comment", text: "x" },
   ], { eventLoc: { x: 1, y: 1 } }, {});
   assert.strictEqual(state.hero.hp, 100, "presentation no-ops must not change hp");

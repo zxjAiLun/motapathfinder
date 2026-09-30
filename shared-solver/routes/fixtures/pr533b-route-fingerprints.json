@@ -1,0 +1,76 @@
+{
+  "schema": "motapathfinder.pr533b-route-snapshot-migration.v1",
+  "legacyFieldsRemovedOnly": [
+    "snapshot.visitedFloors",
+    "snapshot.hero.followers (empty only)"
+  ],
+  "gate": "Legacy snapshot projection exactly matches the old pinned route hash; exact winner and objective fingerprint/value unchanged. Production fingerprinting is not modified.",
+  "workloads": {
+    "exp9-maxfinalhp": {
+      "winnerExactFingerprint": "a2ff379819ac9003",
+      "objectiveFingerprint": "b54217a839b77018",
+      "objectiveValue": 1346,
+      "legacyRouteSha256": "c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13",
+      "currentRouteSha256": "32e06e81c2636bfcd4316d334077a95602c392804796196ae12fd04dd4c17e3f",
+      "legacyRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13\"}",
+      "currentRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"32e06e81c2636bfcd4316d334077a95602c392804796196ae12fd04dd4c17e3f\"}",
+      "legacyProjectionExactMatch": true,
+      "decisions": 6
+    },
+    "exp6-maxfinalhp": {
+      "winnerExactFingerprint": "00263e2f4529f32b",
+      "objectiveFingerprint": "b54217a839b77018",
+      "objectiveValue": 1242,
+      "legacyRouteSha256": "f375f94a34a7ce018656df555251684c9164b211ebe8e5a87ff8747dec482558",
+      "currentRouteSha256": "4393761b880daa785a6929cd4fdad30cdef1996cd1fb0cfa131413003eb1e9fd",
+      "legacyRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"f375f94a34a7ce018656df555251684c9164b211ebe8e5a87ff8747dec482558\"}",
+      "currentRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"4393761b880daa785a6929cd4fdad30cdef1996cd1fb0cfa131413003eb1e9fd\"}",
+      "legacyProjectionExactMatch": true,
+      "decisions": 3
+    },
+    "exp8-maxfinalhp": {
+      "winnerExactFingerprint": "4e6c8915fe03e65e",
+      "objectiveFingerprint": "b54217a839b77018",
+      "objectiveValue": 1308,
+      "legacyRouteSha256": "9406654d1fbdaf2651b1cc580d8a58237531d7fc26b918a613ef19e18170c8cd",
+      "currentRouteSha256": "592764eb86d8bb4ae57b07f1d22faccf41b6b8b1a77729e16f2e0997513d62e2",
+      "legacyRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"9406654d1fbdaf2651b1cc580d8a58237531d7fc26b918a613ef19e18170c8cd\"}",
+      "currentRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"592764eb86d8bb4ae57b07f1d22faccf41b6b8b1a77729e16f2e0997513d62e2\"}",
+      "legacyProjectionExactMatch": true,
+      "decisions": 5
+    },
+    "exp9-maxatk": {
+      "winnerExactFingerprint": "d885f53ee61e396b",
+      "objectiveFingerprint": "7f16d6a7576b114a",
+      "objectiveValue": 21,
+      "legacyRouteSha256": "10ad0368e484030ea0c891ea4a55e056700ee6b27922f6b1bf417892dbc52ef9",
+      "currentRouteSha256": "6392f8c64536e87ea6f92d19e9b3961010be929c8b83ea503595efddbbfdbfec",
+      "legacyRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"10ad0368e484030ea0c891ea4a55e056700ee6b27922f6b1bf417892dbc52ef9\"}",
+      "currentRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"6392f8c64536e87ea6f92d19e9b3961010be929c8b83ea503595efddbbfdbfec\"}",
+      "legacyProjectionExactMatch": true,
+      "decisions": 13
+    },
+    "tile4_1-maxfinalhp": {
+      "winnerExactFingerprint": "ec78c20a8c2c47e2",
+      "objectiveFingerprint": "b54217a839b77018",
+      "objectiveValue": 1539,
+      "legacyRouteSha256": "e4027694a3f23977938eabe6848dbbd9e8168214926fa52f8dfe3a54c9f6ed6c",
+      "currentRouteSha256": "3c24089445349546d97d662594a0a7fb52fef1b871915496b32f3948d2a118ff",
+      "legacyRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"e4027694a3f23977938eabe6848dbbd9e8168214926fa52f8dfe3a54c9f6ed6c\"}",
+      "currentRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"3c24089445349546d97d662594a0a7fb52fef1b871915496b32f3948d2a118ff\"}",
+      "legacyProjectionExactMatch": true,
+      "decisions": 13
+    },
+    "tile2_1-maxfinalhp": {
+      "winnerExactFingerprint": "21e8a075df3344a9",
+      "objectiveFingerprint": "b54217a839b77018",
+      "objectiveValue": 2638,
+      "legacyRouteSha256": "d13631cfb59818a859d1393eccd7ab63c6293d2c0f59787b4b80be7e1dd751b3",
+      "currentRouteSha256": "93e7b0dbb5934336ceaafd59a7e569da92c740177a1bf5a623a5163a3aa884ad",
+      "legacyRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"d13631cfb59818a859d1393eccd7ab63c6293d2c0f59787b4b80be7e1dd751b3\"}",
+      "currentRouteFingerprint": "{\"algorithm\":\"sha256-stable-json-v1\",\"sha256\":\"93e7b0dbb5934336ceaafd59a7e569da92c740177a1bf5a623a5163a3aa884ad\"}",
+      "legacyProjectionExactMatch": true,
+      "decisions": 14
+    }
+  }
+}

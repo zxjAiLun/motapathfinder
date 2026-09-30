@@ -42,8 +42,9 @@ const simulator = makeSimulator(project, smokeSpec, {});
 
 const GOAL_PREDICATE = (state) => Boolean(state.floorId === "MT1" && state.hero && (state.hero.exp || 0) >= 9);
 
-const COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT =
-  '{"algorithm":"sha256-stable-json-v1","sha256":"c0adb2d921e84cab097c034bf7b6f8fdb5a344a0cb21f66ea3b7f707a4ebec13"}';
+// PR-5.33b snapshot-only migration; legacy pins and exact-projection evidence retained in mapping fixture.
+const CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT =
+  require("./routes/fixtures/pr533b-route-fingerprints.json").workloads["exp9-maxfinalhp"].currentRouteFingerprint;
 const COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT = "a2ff379819ac9003";
 
 function makeShadow(config) {
@@ -168,8 +169,8 @@ async function main() {
     : null;
   assert.strictEqual(
     routeFingerprint ? routeFingerprint.hash || JSON.stringify(routeFingerprint) : null,
-    COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT,
-    "routeFingerprint must match PR-5.4b baseline",
+    CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT,
+    "routeFingerprint must match PR-5.33b snapshot baseline",
   );
   const winnerState = execution.result.finalCandidate && execution.result.finalCandidate.state;
   assert.ok(winnerState, "winner state required");
@@ -289,7 +290,7 @@ async function main() {
       unsafeWitnessCount: brokenSnapshot.unsafeWitnesses.length,
     },
     productionParity: {
-      routeFingerprint: COMMIT2_REPRESENTATIVE_ROUTE_FINGERPRINT,
+      routeFingerprint: CURRENT_REPRESENTATIVE_ROUTE_FINGERPRINT,
       winnerExactFingerprint: COMMIT2_REPRESENTATIVE_WINNER_FINGERPRINT,
       expanded: dp && dp.expansions,
       generated: dp && dp.generatedActions,
